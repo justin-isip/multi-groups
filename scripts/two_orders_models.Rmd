@@ -1,0 +1,510 @@
+---
+title: "Initial models"
+author: "Justin Isip"
+date: '2022-07-12'
+output: html_document
+---
+
+In this script I will begin modelling among order comparisons. I will do a relatively tight analysis on just studies that include those
+two orders. order will be a fixed effect in our model interacting with land-use. Keep the model structure as simple as possible.
+start modelling the response of two orders to land use.
+
+biodiversity metric ~ land use * order + random effects
+
+
+
+### Clear the workspace
+```{r}
+rm(list=ls())
+```
+
+### Load required packages
+```{r}
+library(tidyverse) # data processing
+library(raster) # for dealing with spatial data
+library(lme4) # for mixed effects models
+library(car) # for getting anova tables with significance values
+library(DHARMa) # for model criticism plots
+library(MuMIn) # for checking explanatory power of mixed effects models
+library(sjPlot) # for visualising results
+library(effects) # for extracting model effects
+library(merTools) # useful for a few things, but we're using it for extracting estimates for plotting
+library(emmeans) # testing multiple comparisons (but also useful for plotting)
+library(predictsFunctions) # Tims package for manipulation of predicts database
+library(optimx) # model convergence
+```
+
+### Load in any required functions
+```{r}
+## Load in the source function for checking GVIFs - for collinearity
+source("https://highstat.com/Books/Book2/HighstatLibV10.R")
+
+## Load in a model criticism function - this function is used for checking the residual/model diagnostic plots to test that the model is meeting all of its assumptions
+model_plot <-function(mod.for.plot){
+  require(lattice)
+  
+  # set up a 2 x 2 grid for plotting
+  par(mfrow = c(2,2))
+  par(ask = TRUE)
+  
+  # qqplot
+  qqnorm(resid(mod.for.plot))
+  qqline(resid(mod.for.plot), col = 2)
+  
+  # residuals vs fitted plot
+  plot(fitted(mod.for.plot), resid(mod.for.plot),xlab = "Fitted Values", ylab = "Residuals", main = "Residuals vs fitted")
+  abline(h=0, lty=2)
+  lines(smooth.spline(fitted(mod.for.plot), resid(mod.for.plot)), col = "red")
+  
+  # histogram of residuals
+  hist(resid(mod.for.plot))
+  
+  # random effects distribution
+  dotplot(ranef(mod.for.plot,condVar = TRUE))
+}
+
+## Load in an overdispersion function from this website to help test if the models are overdispersed.
+# https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#testing-for-overdispersioncomputing-overdispersion-factor
+overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+```
+
+### Read in the data
+```{r}
+diversity <- readRDS("diversity-2022-04-13-02-33-10.rds")
+```
+
+### Correct sampling effort
+```{r}
+
+studies_check <- diversity %>%
+  # filter the rows where Sampling efforts are NA
+  filter(is.na(Sampling_effort)) %>%
+  # keep only unique studies
+  distinct(SS) %>%
+  # pull the vector
+  pull(SS)
+
+diversity %>%
+  # filter the rows where studies are those that had missing sampling efforts (above)
+  filter(SS %in% studies_check) %>%
+  # drop missing levels
+  droplevels() %>%
+  # pull out the sampling efforts of these studies
+  pull(Sampling_effort)%>%
+  # summarise to check that ALL the data are NAs
+  summary() 
+
+# All the sampling effort data are NAs. 
+# Let’s replace the missing sampling efforts with 1 assuming that the sampling efforts don’t vary within a study and correct those that need it.
+
+
+diversity <- diversity %>%
+  
+  # replace missing sampling effort values with 1
+  mutate(x = replace_na(Sampling_effort, 1)) %>%
+  
+  # group by Study
+  group_by(SS) %>%
+  
+  # check how many sampling efforts there are in each study
+  mutate(n_sample_effort = n_distinct(Sampling_effort),
+         # get the maximum sampling effort for the studies
+         
+         max_sample_effort = max(Sampling_effort)
+  ) %>%
+  
+  ungroup() %>%
+  
+  # if the study has more than one sampling effort, correct the abundance
+  
+  # so if there's only one sampling effort, then leave the dividing effort as empty because we don't want to change the abundances when we do the divisions. Otherwise, we give it the maximum sampling effort.
+  mutate(DividingEffort = ifelse(n_sample_effort == 1, NA, max_sample_effort)) %>%
+  
+  # if the diversity metric isn't sensitive to the effort, then we'll change the value to NA too (so we won't end up changing the measurement), otherwise leave it as it is
+  mutate(DividingEffort = ifelse(Diversity_metric_is_effort_sensitive == FALSE, NA, DividingEffort)) %>%
+  
+  # now let's create the effort corrected measurement by dividing the abundances by the sampling efforts
+  # where the dividing effort isn't NA (i.e. when it is necessary)
+  mutate(Corrected_sampling_effort = ifelse(is.na(DividingEffort), 
+                                            Sampling_effort,
+                                            Sampling_effort / DividingEffort),
+         Effort_corrected_measurement = ifelse(is.na(DividingEffort),
+                                               Measurement,
+                                               Measurement * Corrected_sampling_effort))
+
+# summarise the corrected sampling efforts
+summary(diversity$Corrected_sampling_effort)
+```
+
+### Merge sites
+```{r}
+
+diversity <- diversity %>%
+  
+  # group by aspects of the sites that should be identical if we need to merge the abundances
+  # I only want to merge abundances if they are within the same study and block
+  # as I'm assuming that even if the locations and sampling times are the same, 
+  # if the blocks or studies are different, then there is some good reason for this.
+  group_by(Source_ID, Study_number, Study_name, Block,
+           #diversity metric type
+           Diversity_metric, Diversity_metric_type, Diversity_metric_unit,
+           Diversity_metric_is_effort_sensitive,
+           
+           #details of the sites
+           Predominant_habitat, Use_intensity, Years_since_fragmentation_or_conversion,
+           
+           #details of the sampling method
+           Sampling_method, Sampling_effort_unit,
+           
+           #species identity
+           Study_common_taxon, Rank_of_study_common_taxon,
+           Taxon_number, Taxon_name_entered,
+           Indication, Parsed_name,
+           Best_guess_binomial, COL_ID, Taxon, Name_status,
+           Rank, Kingdom, Phylum, Class, Order, Family, Genus, Species,
+           Higher_taxon,
+           
+           #site location
+           Longitude, Latitude,
+           
+           #sampling time
+           Sample_start_earliest, Sample_end_latest, Sample_date_resolution) %>%
+  
+  # if the diversity metric is occurrence:
+  #   if it is present at all, give it a 1, if it is always absent, give it a 0,
+  # otherwise (if the metric is either abundance or species richness):
+  #   calculate the weighted abundance/richness for each taxonomic group, weighted by sampling effort
+  
+  mutate(merged_diversity = 
+           ifelse(Diversity_metric_type == "Occurrence",
+                  # if any of the occurrence values are 1, `any` will return TRUE. If you sum a logical, TRUE becomes 1 and FALSE becomes 0
+                  sum(any(Effort_corrected_measurement > 0)),
+                  
+                  # note that since we've already corrected the sampling effort, this is essentially a mean rather than a weighted mean for abundance measurements. It's a weighted mean for species richness though where sampling efforts vary.
+                  stats::weighted.mean(x = Effort_corrected_measurement,
+                                       w = Corrected_sampling_effort))
+  )
+
+# pull out the grouping data (so we can double check how many records we're merging for each)
+group_dat <- diversity %>% 
+  group_data() %>% # group_data() returns a data frame that defines the grouping structure
+  mutate(nvals_merged = lengths(.rows),
+         merge_ID = row_number())
+
+# ungroup the diversity data for future use
+diversity <- ungroup(diversity)
+
+# create a dataset where we can extract just the merged data if we want to
+diversity_merged <- diversity %>%
+  left_join(group_dat)
+
+# check that the merging has worked (row numbers should be equal right now)
+nrow(diversity) == nrow(diversity_merged)
+
+# Let’s take a look at how often we’re merging sites. 
+hist(diversity_merged$nvals_merged)
+```
+
+### Calculate the diversity metrics
+```{r}
+# Now you can calculate site-level diversity metrics.
+
+sites <- diversity_merged %>%
+
+  # pull out only the merged diversity data
+  distinct(merge_ID, .keep_all = TRUE) %>%
+  
+  # re-make SSB and SSBS values since we've now dropped a bunch of values
+  mutate(SS = paste(Source_ID, Study_number),
+         SSB = paste(SS, Block),
+         SSBS = paste(SSB, Site_number)) %>%
+  
+  # group by SSBS (each unique value corresponds to a unique site)
+  group_by(SSBS) %>%
+  
+  # now add up all the abundance measurements within each site
+  mutate(TotalAbundance = ifelse(Diversity_metric_type == "Abundance",
+                                 sum(merged_diversity),
+                                 # if the diversity metric type isn't Abundance, then leave the TotalAbundance measurement as NA
+                                 NA),
+         
+         # if the metric is already species richness
+         SpeciesRichness = ifelse(Diversity_metric_type == "Species richness",
+                                  # just use the value as given
+                                  merged_diversity,
+                                  # for abundance and occurrence measurements, count the number of unique species names that are present at the site 
+                                  n_distinct(Taxon_name_entered[merged_diversity > 0])),
+         
+         # calculate Chao's Species Richness Estimator
+         # if the diversity metric is suitable for this calculation
+         ChaoRichness = ifelse(Diversity_metric_is_suitable_for_Chao == TRUE,
+                               # calculate the Chao estimator
+                               sum(merged_diversity > 0) + (((sum(merged_diversity == 1) * (sum(merged_diversity == 1)-1)) / (2*(sum(merged_diversity == 2)+1)))),
+                               # otherwise give Chao NA
+                               NA)
+         ) %>%
+  
+  # ungroup
+  ungroup() %>%
+  
+    # now group by Study ID
+  group_by(SS) %>%
+  
+  # pull out some useful study-level numbers
+  # maximum abundance for each study
+  mutate(MaxAbundance = max(TotalAbundance),
+         # minimum (non-zero) abundance for each study
+         # we'll use this when we do species rarefaction
+         MinNonZeroAbundance = ifelse(all(TotalAbundance == 0)| all(is.na(TotalAbundance)),
+                                      NA,
+                                      min(TotalAbundance[TotalAbundance > 0])),
+         # number of species in the study
+         SpeciesInStudy = n_distinct(Taxon_name_entered[merged_diversity > 0]),
+         # assess whether the study is suitable for rarefaction
+         SuitableForRarefaction = ifelse(
+           # if all diversity measurements are integers
+           # i.e. if you round down, it should be equal to the original number
+           # and the diversity metric is suitable for Chao
+           all(floor(merged_diversity) == merged_diversity) &
+             Diversity_metric_is_suitable_for_Chao == TRUE,
+           # then class the study as suitable for rarefaction
+           TRUE,
+           # otherwise it can't be used
+           FALSE
+           )
+         ) %>%
+  
+  # ungroup
+  ungroup()  %>%
+  
+  # now rescale total abundance, so that within each study, abundance varies from 0 to 1.
+  mutate(RescaledAbundance = TotalAbundance/MaxAbundance,
+         # for statistical modelling, we'll also calculate the square root of species abundance, although we might want to use log(x+1) transformation instead
+         sqrtRescaledAbundance = sqrt(RescaledAbundance)
+         )
+
+```
+
+### Fix up your explanatory variables 
+```{r}
+
+sites <- rename(sites,
+                Predominant_land_use = Predominant_habitat)
+
+
+# Relevel the land use and use intensity classes
+sites <- sites %>%
+  
+  mutate(
+    
+    # collapse primary forest and non-forest together into primary vegetation as these aren't well distinguished
+    Predominant_land_use = recode_factor(Predominant_land_use, 
+                                         "Primary forest" = "Primary", 
+                                         "Primary non-forest" = "Primary"),
+    
+    # indeterminate secondary veg and cannot decide get NA
+    Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
+    Predominant_land_use = na_if(Predominant_land_use, "Cannot decide"),
+    Use_intensity = na_if(Use_intensity, "Cannot decide"),
+    
+    # set reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# take a look at the LandUse/Use intensity split
+table(sites$Predominant_land_use, sites$Use_intensity)
+
+
+# You might want to create a new factor where land use and intensity are pasted together. 
+# This is often the easiest way to model effects and often we need to combine levels because the full factorial combination is sparse in areas or missing.
+
+sites <- sites %>%
+  mutate(LUI = interaction(Predominant_land_use, Use_intensity, sep = "_"),
+         # as an example, let's collapse Mature Intense and Mature Light into a single category
+         LUI = recode_factor(LUI, 
+                             "Mature secondary vegetation_Intense use" = "Mature secondary vegetation_LightIntense", 
+                             "Mature secondary vegetation_Light use" = "Mature secondary vegetation_LightIntense"),
+         LUI = relevel(LUI, ref =  "Primary_Minimal use")
+  )
+
+table(sites$LUI)
+
+```
+
+### Subset predicts to multi-group studies that only include insects 
+```{r}
+orders <-
+  sites %>%
+  filter(Class == "Insecta") %>% # filter only for insects
+  group_by(SS) %>% # group by SS
+  mutate(
+    Multiple_groups = 
+      case_when(
+        (length(unique(Higher_taxon))) > 1 ~ "YES",
+        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>% # for each SS create a new column: multiple groups = YES/NO - depending on if there's 
+  # more than one unique higher taxon within that study
+  # Filter the data for studies with multiple groups
+  filter(Multiple_groups == "YES") %>% # filter for the rows for studies with multiple groups
+  ungroup() %>% 
+  droplevels()
+```
+
+### `Check for collinearity
+```{r}
+corvif(orders[ , c("Predominant_land_use", "Use_intensity")])
+```
+
+### Complete cases
+```{r}
+model_data_ab <- drop_na(orders, 
+                         RescaledAbundance, Predominant_land_use,
+                         Use_intensity)
+
+model_data_sr <- drop_na(orders, 
+                         SpeciesRichness, Predominant_land_use,
+                         Use_intensity)
+```
+
+### First, let’s transform RescaledAbundance
+```{r}
+model_data_ab <- mutate(model_data_ab, 
+                        logAbundance = log(RescaledAbundance + 1),
+                        sqrtAbundance = sqrt(RescaledAbundance)
+)
+```
+
+
+### Model species richness for Hymenoptera vs Coleoptera
+```{r}
+
+# Log transforming species richness so we can model with normal errors
+model_data_sr$logSR <- log(model_data_sr$SpeciesRichness + 1)
+
+m_coleo_hymen <-
+  model_data_sr %>% # filter species richness df
+  filter(Higher_taxon == "Hymenoptera" | Higher_taxon == "Coleoptera") %>%
+  droplevels()
+
+```
+
+### Model species_richness 
+```{r}
+### Create models to test the best random effects structure
+### Create the maximal model and proceed with backwards stepwise selection
+## Create the maximal model. optimizer used due to convergence warnings
+
+m1 <- lmer(logSR ~ Predominant_land_use + Use_intensity + Higher_taxon + Predominant_land_use:Higher_taxon +
+             Predominant_land_use:Use_intensity + Use_intensity:Higher_taxon + (1|SS) + (1|SSB),
+           data = m_coleo_hymen)
+
+# Include Source ID as a random effect
+
+m2 <- lmer(logSR ~ Predominant_land_use + Use_intensity + Higher_taxon + Predominant_land_use:Higher_taxon +
+             Predominant_land_use:Use_intensity + Use_intensity:Higher_taxon + (1|Source_ID) + (1|SS) + (1|SSB),
+           data = m_coleo_hymen)
+
+# compare the models that converged using Akaike's Information Criterion (AIC)
+AIC(m1) 
+AIC(m2) # m2 with the random intercept for source ID has the better AIC
+
+Anova(m2) 
+# land_use:HT interaction is significant so we can't remove it from the model. Main effects of LU and UI are also significant
+# HT doesn't have a significant effect on SR which makes sense, but we can't remove it as the interaction of 
+# land_use:HT is significant.
+anova(m1, m2)
+
+## Which is the best model?
+summary(m2)
+
+
+# Let's make a coefficients table of the model
+sjPlot::tab_model(m2, 
+                  show.re.var= TRUE)
+
+
+# Multiple categorical variables interacting
+m2_emm <- emmeans(m2, ~ Predominant_land_use*Use_intensity)
+m2_con <- contrast(m2_emm, method = "trt.vs.ctrl")
+print(m2_con)
+
+
+
+# Below is code for GLMMs which I've hashtagged out because I'm using LMMs now
+
+# m1s <- glmer(SpeciesRichness ~ LUI * Higher_taxon + (1|SS) + (1|SSB), data = model_beetles_bees, family = "poisson",
+# control = glmerControl("optimx", optCtrl=list(method="nlminb")))
+
+# m1 <- glmer(SpeciesRichness ~ LUI * Higher_taxon + (1|SS) + (1|SSB) , data = model_beetles_bees, family = poisson, 
+
+mean(m_coleo_hymen$logSR)
+var(m_coleo_hymen$logSR)
+```
+
+### Validate the model, check diagnostics of model
+```{r}
+plot(m2, add.smooth = FALSE, which = 1) # fitted values versus residuals (homogeneity)
+e <- resid(m2) 
+hist(e, xlab = "Residuals", main = "") # histogram on the residuals (normality)
+plot(m_coleo_hymen$logSR, e, xlab = "logSR", ylab = "Residuals") # residuals versus logSR (independence)
+plot(m_coleo_hymen$Predominant_land_use, e, xlab = "Land Use", ylab = "Residuals") # Residuals versus land use
+
+```
+
+### Check the model for overdispersion - is the variance greater than the mean?
+```{r}
+# load in an overdispersion function from here: https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#testing-for-overdispersioncomputing-overdispersion-factor
+overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+# test the species richness model for overdispersion
+overdisp_fun(m1)
+```
+
+###
+```{r}
+boxplot(m_coleo_hymen$logSR)
+hist(m_coleo_hymen$logSR)
+dotchart(m_coleo_hymen$logSR, group = m_coleo_hymen$Higher_taxon) # used to identify outliers
+
+m_coleo_hymen %>%
+  ggplot( aes(x=logSR, fill=Higher_taxon)) +
+    geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="") +
+    facet_wrap(~Higher_taxon)
+
+ggplot(m_coleo_hymen, aes(x = , y = logSR)) +           
+  geom_boxplot() +
+  facet_wrap(~Higher_taxon) + theme(axis.text.x = element_text(angle = 45, hjust= 1)) 
+```
+
+###
+```{r}
+
+```
+
+###
+```{r}
+
+```
+
+###
+```{r}
+
+```
