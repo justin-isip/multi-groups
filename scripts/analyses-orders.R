@@ -3,7 +3,7 @@
 # modelling how Arachnida, Diptera, Coleoptera and Hymenoptera multi-group studies respond to land-use
 
 # read in the data ----
-diversity <- readRDS("data/diversity-2022-04-13-02-33-10-rds/diversity-2022-04-13-02-33-10.rds")
+diversity <- readRDS("data/diversity-2022-04-13-02-33-10.rds")
 
 # Lets load the relevant package ----
 library(tidyverse) # data processing
