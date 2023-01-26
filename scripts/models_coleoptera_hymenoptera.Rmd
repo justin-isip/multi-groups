@@ -227,13 +227,13 @@ get_site_abundances_order <- function(data,
 
 ### Load all other functions
 ```{r}
-source("/Applications/PhD /scripts/data_prep_functions.R")
-source("/Applications/PhD /scripts/site_comparison_functions.R")
+source("/Applications/PhD/Andy/data_prep_functions.R")
+source("/Applications/PhD/Andy/site_comparison_functions.R")
 ```
 
 ### Read in the data
 ```{r}
-diversity <- readRDS("diversity-2022-04-13-02-33-10.rds")
+diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
 ```
 
 ### Correct for sampling effort
@@ -465,10 +465,10 @@ AIC(hym_ab1, hym_ab2, hym_ab3)
 ### Choose the optimum fixed effects structure (abundance)
 ```{r}
 
-# Have a look at the signif icance of the terms
+# Have a look at the significance of the terms
 Anova(hym_ab2) 
 
-# Use_intensity:Within_hymenoptera is nthe least significant interaction in the model so we can remove this term 
+# Use_intensity:Within_hymenoptera is the least significant interaction in the model so we can remove this term 
 # i.e. bees, ants and wasps don't respond significantly differently to intensity in their abundance 
 
 # Model simplification
@@ -503,7 +503,5 @@ sjPlot::plot_model(hym_ab2.1, type ="pred")
 
 # Visualise model coefficients
 coefplot(hym_ab2.1)
-
-result <- ggpredict(hym_ab2.1, c("LogAbundance", "Within_hymenoptera"))
 
 ```
