@@ -9,7 +9,7 @@
 
 
 # read in the data ----
-predicts <- readRDS("data/diversity-2022-04-13-02-33-10-rds/diversity-2022-04-13-02-33-10.rds")
+predicts <- readRDS("data/diversity-2022-04-13-02-33-10.rds")
 
 # Lets load the relevant package ----
 library(tidyverse)
@@ -43,7 +43,7 @@ study_taxon <- predicts %>%
 arthropods <-
     predicts %>%
     filter(Phylum == "Arthropoda") %>% # filter only for arthropods
-    select(Source_ID, Study_number, SS, SSS, SSB, SSBS, Taxon, 
+    dplyr::select(Source_ID, Study_number, SS, SSS, SSB, SSBS, Taxon, 
     Rank, Kingdom, Phylum, Class, Order, Family, Genus, 
     Species, Higher_taxon,  Taxon_name_entered, Parsed_name, 
     Study_common_taxon, Rank_of_study_common_taxon, Predominant_habitat, Use_intensity) %>% # Subset the columns of interest
