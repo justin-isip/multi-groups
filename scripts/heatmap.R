@@ -62,7 +62,7 @@ for (row in 1:ntaxa) {
 }
 
 # Make a heatmap using base R, Colv = NA, Rowv = NA removes the dendrogram
-heatmap(map,  Colv = NA, Rowv = NA, scale = "column", col = my_colors(100)) # Heatmap with manual colors
+heatmap(map,  Colv = NA, Rowv = NA, scale = "column")
 
 
 # Turn the matrix map back into a dataframe
