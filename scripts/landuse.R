@@ -9,6 +9,7 @@ predicts <- readRDS("data/diversity-2022-04-13-02-33-10.rds")
 library(tidyverse)
 
 
+
 # Filter predicts for multi group studies
 multi <-
   predicts %>%
@@ -51,13 +52,18 @@ habitat_studies <- habitat %>%
   rename(number_of_studies = "n")
 
 # Create a heatmap showing the number of studies for each of the most studies-rich insect orders across land-use classes
-habitat_studies %>%
+orders_habitat_studies <- 
+  habitat_studies %>%
   ggplot(aes(x = Predominant_habitat, y = Higher_taxon, fill = number_of_studies)) +
   geom_tile() +
   # scale_fill_gradient(trans = 'log') + # log scale
   theme(axis.text.x = element_text(angle = 45, hjust= 1)) +
   # geom_text(aes(label = round(log(number), 1)))
   geom_text(aes(label = number_of_studies), color = "white", size = 3) 
+
+#ggsave(here("figures/orders_habitat_studies.png"), height = 5)
+
+
 
 # We lose the multiple groups within a study when we pull distinct(SS) so we end up having less studies for each HT
 a <- multi %>%
