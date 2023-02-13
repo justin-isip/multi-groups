@@ -74,9 +74,9 @@ add_order_fold <- function(data, folds = "default", verbose = TRUE){
     data$order_fold[data$Higher_taxon == "Lepidoptera"] <- "Butterflies"
     data$order_fold[data$Higher_taxon == "Hymenoptera"] <- "Hymenoptera"
     data$order_fold[data$Higher_taxon == "Hemiptera"] <- "Bugs"
-    data$order_fold[data$Higher_taxon == "Odonata" &
-                    data$Higher_taxon == "Trichoptera" &
-                    data$Higher_taxon == "Ephemeroptera" &
+    data$order_fold[data$Higher_taxon == "Odonata" |
+                    data$Higher_taxon == "Trichoptera" |
+                    data$Higher_taxon == "Ephemeroptera" |
                     data$Higher_taxon == "Plecoptera" ] <- "Aquatics"
     data$order_fold[data$Class == "Insecta" & 
                       data$Higher_taxon != "Diptera" & 
@@ -267,7 +267,6 @@ insects <-
   ungroup() %>% 
   droplevels()
 ```
-
 ### Add_order_fold to allow taxonomic cross-validation and split insects into exclusive groups
 ```{r}
 # Split insects into flies, beetles, butterflies, hymenoptera, bugs, aquatics and other insects 
