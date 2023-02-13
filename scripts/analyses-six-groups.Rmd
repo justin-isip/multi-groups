@@ -1,0 +1,476 @@
+---
+title: "explore_zeta"
+author: "Justin Isip"
+date: "2023-02-01"
+output: html_document
+---
+
+## R Markdown
+
+### Clear the workspace
+```{r}
+rm(list=ls())
+```
+
+### Load required packages
+```{r}
+library(tidyverse) # data processing
+library(lme4) # for mixed effects models
+library(car) # for getting anova tables with significance values
+library(DHARMa) # for model criticism plots
+library(MuMIn) # for checking explanatory power of mixed effects models
+library(sjPlot) # for visualising results
+library(effects) # for extracting model effects
+library(merTools) # useful for a few things, but we're using it for extracting estimates for plotting
+library(emmeans) # testing multiple comparisons (but also useful for plotting)
+library(coefplot) # visualising model coefficients
+library(cli)
+library(ggeffects)
+```
+
+### Load in model plot function
+```{r}
+
+## Load in a model criticism function - this function is used for checking the residual/model diagnostic plots to test that the model is meeting all of its assumptions
+model_plot <-function(mod.for.plot){
+  require(lattice)
+  
+  # set up a 2 x 2 grid for plotting
+  par(mfrow = c(2,2))
+  par(ask = TRUE)
+  
+  # qqplot
+  qqnorm(resid(mod.for.plot))
+  qqline(resid(mod.for.plot), col = 2)
+  
+  # residuals vs fitted plot
+  plot(fitted(mod.for.plot), resid(mod.for.plot),xlab = "Fitted Values", ylab = "Residuals", main = "Residuals vs fitted")
+  abline(h=0, lty=2)
+  lines(smooth.spline(fitted(mod.for.plot), resid(mod.for.plot)), col = "red")
+  
+  # histogram of residuals
+  hist(resid(mod.for.plot))
+  
+  # random effects distribution
+  dotplot(ranef(mod.for.plot,condVar = TRUE))
+}
+```
+
+### Load add_order_fold function to split the diversity data into exclusive insect orders 
+```{r}
+
+add_order_fold <- function(data, folds = "default", verbose = TRUE){
+  #
+  # By default (and nothing else is yet coded up), this puts each row into
+  # an insect order that each have a decent, number of rows of data. 
+  # This allows site-level values to be obtained within
+  # each of the order folds in turn.
+  
+  # Set up order_fold, a factor that holds the fold identity.
+  data$order_fold <- rep(NA, nrow(data))
+  
+  # Rows are assigned to folds based on the higher taxonomy information.
+  if (folds == "default"){
+    data$order_fold[data$Higher_taxon == "Diptera"] <- "Diptera"
+    data$order_fold[data$Higher_taxon == "Coleoptera"] <- "Coleoptera"
+    data$order_fold[data$Higher_taxon == "Lepidoptera"] <- "Lepidoptera"
+    data$order_fold[data$Higher_taxon == "Hymenoptera"] <- "Hymenoptera"
+    data$order_fold[data$Higher_taxon == "Hemiptera"] <- "Hemiptera"
+    data$order_fold[data$Higher_taxon == "Arachnida"] <- "Arachnida"
+    data$order_fold[data$Higher_taxon == "Odonata" |
+                    data$Higher_taxon == "Trichoptera" |
+                    data$Higher_taxon == "Ephemeroptera" |
+                    data$Higher_taxon == "Plecoptera" ] <- "Aquatics"
+    data$order_fold[data$Phylum == "Arthropoda" & 
+                      data$Higher_taxon != "Diptera" & 
+                      data$Higher_taxon != "Coleoptera" &
+                      data$Higher_taxon != "Lepidoptera" &
+                      data$Higher_taxon != "Hymenoptera" &
+                      data$Higher_taxon != "Hemiptera" &
+                      data$Higher_taxon != "Arachnida" &
+                      data$Higher_taxon != "Odonata" &
+                      data$Higher_taxon != "Trichoptera" &
+                      data$Higher_taxon != "Ephemeroptera" &
+                      data$Higher_taxon != "Plecoptera"] <- "OtherArthropods"
+  }else{
+    stop("Only the default folds have been coded up so far!")
+  }
+  
+  data$order_fold <- as.factor(data$order_fold)
+  
+  if (verbose == TRUE){
+    # By default, report on the breakdown of records per fold.
+    cat("Numbers of rows within each order fold are as follows:\n\n")
+    print(table(data$order_fold))
+  }
+  
+  return(data)
+}
+
+```
+
+### Load function to calculate total abundance for each site x order_fold combination
+```{r}
+# Calculate total abundance for each site --------------------------------------
+# Modified to clarify reporting is on site x fold combinations
+get_site_abundances_order <- function(data, 
+                                order_folds = FALSE,
+                                verbose = TRUE){
+  # This calculates site metrics for each site or, if desired, each order fold
+  # within each site.
+  
+  # Make it a data frame to avoid having to deal with a tibble.
+  data <- as.data.frame(data)
+  
+  # Set up a variable for uniquely identifying the site x order_fold combination
+  # or, if order_folds == FALSE, the site. This is what grouping is then done
+  # by.
+  print(table(data$order_fold))
+  
+  if (order_folds == TRUE){
+    data$the_order_folds <- data$order_fold
+  }else{
+    data$the_order_folds <- ""
+  }
+  
+  # Just for debugging
+  print(table(data$the_order_folds))
+  
+  # Start to calculate site-level metrics.
+  sites <- data %>%
+    
+    # pull out only the merged diversity data
+    distinct(merge_ID, .keep_all = TRUE) %>%
+    
+    # Re-make SSB and SSBS values since we've now dropped a bunch of values; and
+    # also add SSBST which is that order x site combo. The trimws is because the
+    # SSBST would otherwise end in a space if order_folds == FALSE.
+    mutate(SS = paste(Source_ID, Study_number),
+           SSB = paste(SS, Block),
+           SSBS = paste(SSB, Site_number),
+           SSBST = trimws(paste(SSBS, the_order_folds))) %>%
+    
+    # group by SSBST (each unique value corresponds to a unique site x fold)
+    group_by(SSBST) %>%
+    
+    # Now add up all the abundance measurements within each site and also 
+    # estimate coverage.
+    mutate(TotalAbundance = ifelse(Diversity_metric_type == "Abundance",
+                                   sum(merged_diversity, na.rm = TRUE),
+                                   # If the diversity metric type isn't 
+                                   # Abundance, then leave the TotalAbundance 
+                                   # measurement as NA.
+                                   NA),
+           
+           SpeciesRichness = ifelse(Diversity_metric_type == "Species richness",
+                                    merged_diversity,
+                                    # for abundance and occurrence measurements,
+                                    # count the number of unique species names 
+                                    # that are present at the site 
+                                    n_distinct(Best_guess_binomial[merged_diversity > 0])),
+           
+           coverage = get.SC2(merged_diversity)) %>%
+    
+    # ungroup
+    ungroup() %>%
+    
+    # pull out unique site/fold combinations.
+    distinct(SSBST, .keep_all = TRUE) %>%
+    
+    # now group by Study ID and fold.
+    group_by(SS, the_order_folds) %>%
+    
+        # pull out the maximum abundance for each study/fold combination.
+    mutate(MaxAbundance = max(TotalAbundance),
+           MinNonZero = min(TotalAbundance[TotalAbundance > 0])) %>%
+    
+    # ungroup.
+    ungroup() %>%
+    
+    # now rescale total abundance, so that within each study, the maximum is 1.
+    mutate(RescaledAbundance = TotalAbundance/MaxAbundance) %>%
+    
+    mutate(sqrtRescaledAbundance = sqrt(RescaledAbundance)) 
+  
+    # If a study reports abundance as a count, add 1 to all values; otherwise
+  # add 1/2 the minimum non-zero value; then log-transform to get a useful
+  # logAbundance value that may be more symmetric than sqrtRescaledAbundance.
+  sites$to_add <- ifelse(sites$Diversity_metric_unit %in%
+                           c("individuals", "times observed"), 1,
+                         sites$MinNonZero/2)
+  sites$logAbundance <- log(sites$TotalAbundance + sites$to_add)
+  
+  
+  # Remove NA values and drop levels
+  sites <- as.data.frame(sites)
+  sites <- droplevels(subset(sites, !is.na(sqrtRescaledAbundance)))
+  
+  if (verbose == TRUE){
+    # Summarise structure of site-level data frame
+    cat("\nThere are abundance data for:\n")
+    cat(paste("   ", sum(!is.na(sites$sqrtRescaledAbundance)), "sites, from\n"))
+    cat(paste("   ", 
+              length(unique(sites$SS[!is.na(sites$sqrtRescaledAbundance)])), 
+              "studies and\n"))
+    cat(paste("   ", 
+              length(unique(sites$Source_ID[!is.na(sites$sqrtRescaledAbundance)])),
+              "sources.\n"))
+  }
+  
+  # Set provenance attributes
+  attr(sites, which = "diversity_extract") <- 
+    attr(data, which = "diversity_extract")
+  attr(sites, which = "is_merged") <- attr(data, which = "is_merged")
+  attr(sites, which = "order_folds") <- order_folds 
+  attr(sites, which = "when_Created") <- Sys.time()
+  
+  return(sites)
+}
+
+```
+
+### Load all other functions
+```{r}
+source("/Applications/PhD/Andy/data_prep_functions.R")
+source("/Applications/PhD/Andy/site_comparison_functions.R")
+```
+
+## Read in the data
+```{r}
+diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
+```
+
+### Correct for sampling effort
+```{r}
+if(check_sampling_effort_nas(diversity) ==
+   FALSE) stop("Some studies have NA for sampling effort in only some sites!")
+
+diversity <- correct_for_sampling_effort(diversity)
+print(summarise_diversity(diversity))
+```
+
+### Merge sites
+```{r}
+merged <- merge_sites(diversity, verbose = TRUE) 
+```
+
+### Filter merged sites for groups of interest
+```{r}
+arthropods <-
+  merged %>%
+  filter(Phylum == "Arthropoda") %>% # filter only for arthropods, so we can include Arachnida
+  group_by(SS) %>% # group by SS
+  mutate(
+    Multiple_groups = 
+      case_when(
+        (length(unique(Higher_taxon))) > 1 ~ "YES",
+        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>% # for each study create a new column called multiple groups = YES/NO - 
+  # YES if there's more than one unique higher taxon within that study, NO if not
+  # Filter the data for studies with multiple groups
+  filter(Multiple_groups == "YES") %>% # filter for only the rows for studies (YES) with multiple groups
+  ungroup() %>% 
+  droplevels() 
+```
+
+### Add_order_fold to allow taxonomic cross-validation and split arthropods into exclusive groups
+```{r}
+# split arthropods into Aquatics, Arachnida, Coleoptera, Diptera, Hemiptera, Hymenoptera, Lepidoptera and OtherArthropods
+arthropods <- add_order_fold(arthropods, verbose = TRUE)
+```
+
+### Calculate site level diversity metrics using get_site_abundances_order and order_fold for each site x order combination
+```{r}
+arthropods_ssbst <- get_site_abundances_order(arthropods, 
+                                  order_folds = TRUE, verbose = TRUE)
+
+# There are 13303 sites because there are 13303 rows and each row is a site x order combination 
+
+table(arthropods_ssbst$order_fold) # number of rows for each site x order combination
+
+```
+
+### Subset our df of SSBST (site x order combination) only for the groups of interest
+```{r}
+arthropods_six_groups <- 
+    arthropods_ssbst %>%
+    filter(Higher_taxon != "NA") %>% # some rows have unknown species of insects/arthropods
+    filter(Higher_taxon %in% c("Arachnida", "Coleoptera", "Diptera", "Hemiptera", "Hymenoptera", "Lepidoptera")) %>%
+    filter(Predominant_habitat != "Cannot decide") # filter out habitats that aren't defined
+```
+
+### Fix up your explanatory variables 
+```{r}
+
+# Rename predominant habitat since its not really habitat we're looking at
+arthropods_six_groups <- rename(arthropods_six_groups,
+                Predominant_land_use = Predominant_habitat)
+
+
+# Relevel the land use and use intensity classes
+arthropods_six_groups <- arthropods_six_groups %>%
+  
+  mutate(
+    
+    # collapse primary forest and non-forest together into primary vegetation as these aren't well distinguished
+    Predominant_land_use = recode_factor(Predominant_land_use, 
+                                         "Primary forest" = "Primary", 
+                                         "Primary non-forest" = "Primary"),
+    
+    # indeterminate secondary veg and cannot decide get NA
+    Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
+    Predominant_land_use = na_if(Predominant_land_use, "Cannot decide"),
+    Use_intensity = na_if(Use_intensity, "Cannot decide"),
+    
+    # set reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# take a look at the LandUse/Use intensity split
+table(arthropods_six_groups$Predominant_land_use, arthropods_six_groups$Use_intensity)
+
+# Not many MSV intense use sites, primary intense use sites and young secondary light use, might have to collapse light and intense use into one
+# But luckily can still keep all 3 secondary veg categories
+
+```
+
+### Complete cases
+```{r}
+model_data_ab <- drop_na(arthropods_six_groups, 
+                         RescaledAbundance, Predominant_land_use,
+                         Use_intensity)
+
+model_data_sr <- drop_na(arthropods_six_groups, 
+                         SpeciesRichness, Predominant_land_use,
+                         Use_intensity)
+
+```
+
+### Prepare the six groups abundance dataframe
+```{r}
+
+# Log transform rescaled abundance
+model_data_ab$logAbundance <- log(model_data_ab$RescaledAbundance + 1)
+
+# Check the distributions
+hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance)
+
+# Have a look at sample sizes
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
+
+# Collapse intense and light land use intensities to have a more even spread of the data
+model_data_ab <- 
+  model_data_ab %>%
+  mutate(
+    Use_intensity = recode_factor(Use_intensity,
+                                  "Intense use" = "High_use",
+                                  "Light use" = "High_use"),
+# reset reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+# Have a look at sample sizes
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
+```
+
+### Backwards stepwise model selection of abundance for coleoptera vs hymenoptera
+```{r}
+
+# Check the data for collinearity
+source("https://highstat.com/Books/Book2/HighstatLibV10.R")
+
+corvif(model_data_ab[ , c("Predominant_land_use", "Use_intensity", "Higher_taxon")]) 
+
+# Everything is under 3!
+
+# Create your maximal model with all the variables and interactions
+six_groups_ab1 <-
+  lmer(
+    logAbundance ~ Predominant_land_use + Use_intensity + Higher_taxon + Predominant_land_use:Higher_taxon +
+      Predominant_land_use:Use_intensity + Use_intensity:Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+    data = model_data_ab
+  )
+
+# Definitions of interactions:
+
+#   Predominant_land_use:Higher_taxon - does the difference in abundance between land uses depend on higher taxon?
+
+# Predominant_land_use:Use_intensity - does the difference in abundance between land uses depend on use intensity?
+
+# Use_intensity:Higher_taxon - does the difference in abundance between use intensities depend on higher taxon?
+
+
+# Check model plots!
+model_plot(six_groups_ab1)
+```
+
+### Choose the optimum random effects structure (abundance)
+```{r} 
+# Remove SSB
+six_groups_ab2 <-
+  lmer(
+    logAbundance ~ Predominant_land_use + Use_intensity + Higher_taxon + Predominant_land_use:Higher_taxon +
+      Predominant_land_use:Use_intensity + Use_intensity:Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = model_data_ab
+  )
+
+# Remove SS
+six_groups_ab3 <-
+  lmer(
+    logAbundance ~ Predominant_land_use + Use_intensity + Higher_taxon + Predominant_land_use:Higher_taxon +
+      Predominant_land_use:Use_intensity + Use_intensity:Higher_taxon + (1 | Source_ID),
+    data = model_data_ab
+  )
+
+# Compare models using AIC
+AIC(six_groups_ab1, six_groups_ab2, six_groups_ab3)
+
+# six_groups_ab1 is the optimum model (all of the random effects) 
+```
+
+### Choose the optimum fixed effects structure (abundance)
+```{r}
+
+# Have a look at the significance of the terms
+
+Anova(six_groups_ab1) # All of the interactions and terms are significant.
+
+# now lets look at the model estimates
+summary(six_groups_ab1)
+
+# Let's make a coefficients table of the model
+sjPlot::tab_model(six_groups_ab1, 
+                  show.re.var= TRUE)
+
+# Visualise model coefficients
+coefplot(six_groups_ab1)
+
+# Let's plot the effect sizes
+sjPlot::plot_model(six_groups_ab1, type = "int") ; sjPlot::plot_model(six_groups_ab1) 
+
+sjPlot::plot_model(six_groups_ab1, type ="pred") 
+
+sjPlot::plot_model(six_groups_ab1, show.values = T, show.p = T)
+
+```
+
+```{r}
+ab1_emm <- emmeans(six_groups_ab1, ~ Predominant_land_use*Use_intensity)
+ab1_con <- contrast(ab1_emm, method = "trt.vs.ctrl")
+print(ab1_con)
+
+ab2_emm <- emmeans(six_groups_ab1, ~ Predominant_land_use*Higher_taxon)
+ab2_con <- contrast(ab2_emm, method = "trt.vs.ctrl",
+                   by = "Higher_taxon")
+
+print(ab2_con)
+
+plot(ab2_con, comparisons = TRUE)
+pwpp(ab2_con)
+
+```
+
