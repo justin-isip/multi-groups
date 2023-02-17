@@ -43,3 +43,6 @@ vignettes/*.pdf
 
 # data folder
 data/
+
+# figures folder
+figures/
