@@ -1,9 +1,10 @@
 ---
-title: "models_coleoptera_hymenoptera"
+title: "models_within_hymenoptera"
 author: "Justin Isip"
 date: '2022-09-14'
 output: html_document
 ---
+
 
 ### Clear the workspace
 ```{r}
@@ -24,6 +25,7 @@ library(emmeans) # testing multiple comparisons (but also useful for plotting)
 library(coefplot) # visualising model coefficients
 library(cli)
 library(ggeffects)
+library(ggpubr)
 ```
 
 ### Load in model plot function
@@ -69,25 +71,27 @@ add_order_fold <- function(data, folds = "default", verbose = TRUE){
   
   # Rows are assigned to folds based on the higher taxonomy information.
   if (folds == "default"){
-    data$order_fold[data$Higher_taxon == "Diptera"] <- "Flies"
-    data$order_fold[data$Higher_taxon == "Coleoptera"] <- "Beetles"
-    data$order_fold[data$Higher_taxon == "Lepidoptera"] <- "Butterflies"
+    data$order_fold[data$Higher_taxon == "Diptera"] <- "Diptera"
+    data$order_fold[data$Higher_taxon == "Coleoptera"] <- "Coleoptera"
+    data$order_fold[data$Higher_taxon == "Lepidoptera"] <- "Lepidoptera"
     data$order_fold[data$Higher_taxon == "Hymenoptera"] <- "Hymenoptera"
-    data$order_fold[data$Higher_taxon == "Hemiptera"] <- "Bugs"
+    data$order_fold[data$Higher_taxon == "Hemiptera"] <- "Hemiptera"
+    data$order_fold[data$Higher_taxon == "Arachnida"] <- "Arachnida"
     data$order_fold[data$Higher_taxon == "Odonata" |
                     data$Higher_taxon == "Trichoptera" |
                     data$Higher_taxon == "Ephemeroptera" |
                     data$Higher_taxon == "Plecoptera" ] <- "Aquatics"
-    data$order_fold[data$Class == "Insecta" & 
+    data$order_fold[data$Phylum == "Arthropoda" & 
                       data$Higher_taxon != "Diptera" & 
                       data$Higher_taxon != "Coleoptera" &
                       data$Higher_taxon != "Lepidoptera" &
                       data$Higher_taxon != "Hymenoptera" &
                       data$Higher_taxon != "Hemiptera" &
+                      data$Higher_taxon != "Arachnida" &
                       data$Higher_taxon != "Odonata" &
                       data$Higher_taxon != "Trichoptera" &
                       data$Higher_taxon != "Ephemeroptera" &
-                      data$Higher_taxon != "Plecoptera"] <- "OtherInsects"
+                      data$Higher_taxon != "Plecoptera"] <- "OtherArthropods"
   }else{
     stop("Only the default folds have been coded up so far!")
   }
@@ -229,9 +233,12 @@ get_site_abundances_order <- function(data,
 ```{r}
 source("/Applications/PhD/Andy/data_prep_functions.R")
 source("/Applications/PhD/Andy/site_comparison_functions.R")
+source("https://highstat.com/Books/Book2/HighstatLibV10.R") # collinearity
+source("/Applications/PhD/Projects/multi-groups/scripts/combine_and_plot_function.R")
+source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
 ```
 
-### Read in the data
+## Read in the data
 ```{r}
 diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
 ```
@@ -250,11 +257,11 @@ print(summarise_diversity(diversity))
 merged <- merge_sites(diversity, verbose = TRUE) 
 ```
 
-### Filter merged sites for multi-group studies on insects only
+### Filter merged sites for groups of interest
 ```{r}
-insects <-
+arthropods <-
   merged %>%
-  filter(Class == "Insecta") %>% # filter only for insects
+  filter(Phylum == "Arthropoda") %>% # filter only for arthropods, so we can include Arachnida
   group_by(SS) %>% # group by SS
   mutate(
     Multiple_groups = 
@@ -265,35 +272,45 @@ insects <-
   # Filter the data for studies with multiple groups
   filter(Multiple_groups == "YES") %>% # filter for only the rows for studies (YES) with multiple groups
   ungroup() %>% 
-  droplevels()
+  droplevels() 
 ```
-### Add_order_fold to allow taxonomic cross-validation and split insects into exclusive groups
+
+### Add_order_fold to allow taxonomic cross-validation and split arthropods into exclusive groups
 ```{r}
-# Split insects into flies, beetles, butterflies, hymenoptera, bugs, aquatics and other insects 
-insects <- add_order_fold(insects, verbose = TRUE)
+# split arthropods into Aquatics, Arachnida, Coleoptera, Diptera, Hemiptera, Hymenoptera, Lepidoptera and OtherArthropods
+arthropods <- add_order_fold(arthropods, verbose = TRUE) # I've sense checked we don't lose rows 
 ```
 
 ### Calculate site level diversity metrics using get_site_abundances_order and order_fold for each site x order combination
 ```{r}
-fold_abundances <- get_site_abundances_order(insects, 
+arthropods_ssbst <- get_site_abundances_order(arthropods, 
                                   order_folds = TRUE, verbose = TRUE)
 
-# There are 10571 sites because there are 10571 rows and each row is a site x order combination 
+# There are 13303 sites because there are 13303 rows and each row is a site x order combination 
 
-table(fold_abundances$order_fold) # number of rows for each site x order combination
+table(arthropods_ssbst$order_fold) # number of rows for each site x order combination
 
+```
+
+### Subset our df of SSBST (site x order combination) only for the groups of interest
+```{r}
+arthropods_six_groups <- 
+    arthropods_ssbst %>%
+    filter(Higher_taxon != "NA") %>% # some rows have unknown species of insects/arthropods
+    filter(Higher_taxon %in% c("Arachnida", "Coleoptera", "Diptera", "Hemiptera", "Hymenoptera", "Lepidoptera")) %>%
+    filter(Predominant_habitat != "Cannot decide") # filter out habitats that aren't defined
 ```
 
 ### Fix up your explanatory variables 
 ```{r}
 
 # Rename predominant habitat since its not really habitat we're looking at
-fold_abundances <- rename(fold_abundances,
+arthropods_six_groups <- rename(arthropods_six_groups,
                 Predominant_land_use = Predominant_habitat)
 
 
 # Relevel the land use and use intensity classes
-fold_abundances <- fold_abundances %>%
+arthropods_six_groups <- arthropods_six_groups %>%
   
   mutate(
     
@@ -315,192 +332,52 @@ fold_abundances <- fold_abundances %>%
   )
 
 # take a look at the LandUse/Use intensity split
-table(fold_abundances$Predominant_land_use, fold_abundances$Use_intensity)
+table(arthropods_six_groups$Predominant_land_use, arthropods_six_groups$Use_intensity)
+
+# Not many MSV intense use sites, primary intense use sites and young secondary light use, might have to collapse light and intense use into one
+# But luckily can still keep all 3 secondary veg categories
 
 ```
 
 ### Complete cases
 ```{r}
-model_data_ab <- drop_na(fold_abundances, 
-                         logAbundance, Predominant_land_use,
+model_data_ab <- drop_na(arthropods_six_groups, 
+                         RescaledAbundance, Predominant_land_use,
                          Use_intensity)
 
-model_data_sr <- drop_na(fold_abundances, 
+model_data_sr <- drop_na(arthropods_six_groups, 
                          SpeciesRichness, Predominant_land_use,
                          Use_intensity)
-
 ```
 
-### Prepare the within hymenoptera dataframe (abundance)
+### Prepare the six groups abundance dataframe
 ```{r}
 
-# Turn SSBSTs that aren't resolved to Family level to NAs so we can exclude them from the analysis 
-# because we can't determine if they are a wasp, ant or bee
+# Log transform rescaled abundance
+model_data_ab$logAbundance <- log(model_data_ab$RescaledAbundance + 1)
 
-model_data_ab$Family[model_data_ab$Family==""] <- NA
-
-# Two ways to find out how many rows don't have family data
-sum(!complete.cases(model_data_ab$Family))
-sum(is.na(model_data_ab$Family))
-
-# SSBSTs that aren't resolved to family level
-example_1 <- model_data_ab[model_data_ab$SSBST == "CC1_2012__Waite 1 1 1 Hymenoptera",]
-example_2 <- model_data_ab[model_data_ab$SSBST == "DG1_2012__Ge 1  1 Hymenoptera",]
-
-# Drop them from the data set
-drop_nas <- drop_na(model_data_ab, Family)
-
-# Split hymenoptera into ants, bees and wasps based on family
-# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
-
-hymenoptera_ab <-
-  drop_nas %>%
-  filter(Higher_taxon == "Hymenoptera") %>% # Subset abundance data for hymenoptera
-  mutate(Within_hymenoptera = 
-      case_when(
-        Family == "Formicidae" ~ "Ants",
-         Family == "Andrenidae" | Family == "Apidae" | Family == "Colletidae" | Family == "Dasypodaidae" |
-         Family == "Halictidae" | Family == "Megachilidae" | Family == "Meganomiidae" | Family == "Melittidae"|
-         Family == "Stenotritidae" ~ "Bees",   
-         Family != "Formicidae" | Family != "Andrenidae" | Family != "Apidae" | Family != "Colletidae" |
-         Family != "Dasypodaidae" | Family != "Halictidae" | Family != "Megachilidae" | Family != "Meganomiidae" |
-         Family != "Melittidae" | Family != "Stenotritidae" ~ "Wasps")) %>%
-  droplevels()
-
-# Sense check the data frame to make sure its worked
-sense_check <- hymenoptera_ab %>% dplyr::select(SSBST, Higher_taxon, Family, Genus, Species, Within_hymenoptera)
-
-# Turn bees, ants and wasps into a factor for analysis
-hymenoptera_ab$Within_hymenoptera <- as.factor(hymenoptera_ab$Within_hymenoptera)
-
-# check its worked
-levels(hymenoptera_ab$Within_hymenoptera)
-  
 # Check the distributions
-hist(hymenoptera_ab$TotalAbundance) ; hist(hymenoptera_ab$logAbundance)
+hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance)
 
 # Have a look at sample sizes
-table(hymenoptera_ab$Predominant_land_use, hymenoptera_ab$Use_intensity)
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 
-# Collapse land uses and use intensities to have a more even spread of the data
-hymenoptera_ab <- 
-  hymenoptera_ab %>%
+# Collapse intense and light land use intensities to have a more even spread of the data
+model_data_ab <- 
+  model_data_ab %>%
   mutate(
     Use_intensity = recode_factor(Use_intensity,
                                   "Intense use" = "High_use",
                                   "Light use" = "High_use"),
-    Predominant_land_use = recode_factor(Predominant_land_use, 
-                                  "Young secondary vegetation" = "Secondary", 
-                                  "Intermediate secondary vegetation" = "Secondary",
-                                  "Mature secondary vegetation" = "Secondary"),
 # reset reference levels
     Predominant_land_use = factor(Predominant_land_use),
     Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
     Use_intensity = factor(Use_intensity),
     Use_intensity = relevel(Use_intensity, ref = "Minimal use")
   )
-
 # Have a look at sample sizes
-table(hymenoptera_ab$Predominant_land_use, hymenoptera_ab$Use_intensity)
-
-# Few urban sites, proceed with caution
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 ```
 
-### Backwards stepwise model selection of abundance for bees, ants and wasps
-```{r}
 
-# Check the data for collinearity
-source("https://highstat.com/Books/Book2/HighstatLibV10.R")
-
-corvif(hymenoptera_ab[ , c("Predominant_land_use", "Use_intensity", "Within_hymenoptera")]) 
-
-# Everything is under 3!
-
-# Create your maximal model with all the variables and interactions
-hym_ab1 <-
-  lmer(
-    logAbundance ~ Predominant_land_use + Use_intensity + Within_hymenoptera + Predominant_land_use:Within_hymenoptera +
-      Predominant_land_use:Use_intensity + Use_intensity:Within_hymenoptera + (1 | Source_ID) + (1 | SS) + (1 | SSB),
-    data = hymenoptera_ab
-  )
-
-# Definitions of interactions:
-
-#   Predominant_land_use:Within_hymenoptera - does the difference in abundance between land uses depend on if you are a bee, ant or wasp?
-
-# Predominant_land_use:Use_intensity - does the difference in abundance between land uses depend on use intensity?
-
-# Use_intensity:Within_hymenoptera - does the difference in abundance between use intensities depend on if you are a bee, ant or wasp?
-
-
-# Check model plots!
-model_plot(hym_ab1)
-```
-
-### Choose the optimum random effects structure (abundance)
-```{r} 
-# Remove SSB
-hym_ab2 <-
-  lmer(
-    logAbundance ~ Predominant_land_use + Use_intensity + Within_hymenoptera + Predominant_land_use:Within_hymenoptera +
-      Predominant_land_use:Use_intensity + Use_intensity:Within_hymenoptera + (1 | Source_ID) + (1 | SS),
-    data = hymenoptera_ab
-  )
-
-# Remove SS
-hym_ab3 <-
-  lmer(
-    logAbundance ~ Predominant_land_use + Use_intensity + Within_hymenoptera + Predominant_land_use:Within_hymenoptera +
-      Predominant_land_use:Use_intensity + Use_intensity:Within_hymenoptera + (1 | Source_ID),
-    data = hymenoptera_ab
-  )
-
-# Compare models using AIC
-AIC(hym_ab1, hym_ab2, hym_ab3)
-
-# col_hym_ab2 is the optimum model (All of the random effects except SSB) 
-```
-### Choose the optimum fixed effects structure (abundance)
-```{r}
-
-# Have a look at the significance of the terms
-Anova(hym_ab2) 
-
-# Use_intensity:Within_hymenoptera is the least significant interaction in the model so we can remove this term 
-# i.e. bees, ants and wasps don't respond significantly differently to intensity in their abundance 
-
-# Model simplification
-hym_ab2.1 <- update(hym_ab2,~.- Predominant_land_use:Use_intensity)
-
-# Test to see if I've lost a significant amount of explanatory power by removing this interaction
-
-# The test I'll use is a likelihood ratio test (LRT)
-anova(hym_ab2.1, hym_ab2)
-
-# The LRT is not significant, so by removing this interaction from the model, I have not lost a significant amount of explanatory power. This means I can keep the simpler model (without the interaction). 
-
-# Check the Anova table again for the next most complicated, least significant term.
-
-Anova(hym_ab2.1) # All of the remaining interactions are significant
-
-# although Within_hymenoptera is not a significant term we cannot remove it as it interacts significantly with land use
-
-# Therefore hym_ab2.1 is our minimum adequate model but not our maximal model as we dropped an interaction
-
-# now lets look at the model estimates
-summary(hym_ab2.1)
-vcov(hym_ab2.1)
-
-# Let's make a coefficients table of the model
-sjPlot::tab_model(hym_ab2.1, 
-                  show.re.var= TRUE)
-
-sjPlot::plot_model(hym_ab2.1, type = "int") ; sjPlot::plot_model(hym_ab2.1) 
-
-sjPlot::plot_model(hym_ab2.1, type ="pred") 
-
-# Visualise model coefficients
-coefplot(hym_ab2.1)
-
-```
-
+### Within Hymenoptera
