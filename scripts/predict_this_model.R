@@ -29,7 +29,7 @@ predict_this_model <- function(model, order) {
     mutate(Upper_ci = (median + 1.96*sd)) %>%
     mutate(Lower_ci = (median - 1.96*sd))
   
-  # Back transform the log abundance estimates so that I get a measure of abundance
+  # Back transform the log abundance/species richness estimates
   effects <- effects %>%
     mutate(
       Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
