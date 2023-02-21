@@ -85,7 +85,7 @@ combine_and_plot <- function(effect1, effect2, relevel, diversity) {
         ylab("Species richness difference (%)") +
         scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
         guides(color = guide_legend(
-          override.aes=list(shape = 15, size = 8)))
+          override.aes=list(shape = 15, size = 8))) # this makes the legend symbol a square
       
     }
     
