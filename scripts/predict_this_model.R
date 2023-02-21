@@ -64,7 +64,7 @@ predict_this_model <- function(model, order) {
     effects <- effects %>% mutate(Order = "Lepidoptera")
   }
   
-  # make the term column a factor so it can be recoded
+  # make the order column a factor so it can be recoded
   effects$Order <- as.factor(effects$Order)
   
   return(effects)
