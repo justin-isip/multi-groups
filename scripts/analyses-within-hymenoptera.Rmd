@@ -380,4 +380,81 @@ table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 ```
 
 
+
 ### Within Hymenoptera
+
+# Prep the dataframe
+```{r}
+# Turn SSBSTs that aren't resolved to Family level to NAs so we can exclude them from the analysis 
+# because we can't determine if they are a wasp, ant or bee
+model_data_ab$Family[model_data_ab$Family==""] <- NA 
+ 
+
+# Two ways to find out how many rows don't have family data
+sum(!complete.cases(model_data_ab$Family))
+sum(is.na(model_data_ab$Family))
+ 
+# SSBSTs that aren't resolved to family level
+example_1 <- model_data_ab[model_data_ab$SSBST == "CC1_2012__Waite 1 1 1 Hymenoptera",]
+example_2 <- model_data_ab[model_data_ab$SSBST == "DG1_2012__Ge 1  1 Hymenoptera",]
+ 
+# Drop them from the data set
+drop_nas <- drop_na(model_data_ab, Family)
+
+# Split hymenoptera into ants, bees and wasps based on family=
+# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
+hymenoptera_ab <-
+  drop_nas %>%
+  filter(Higher_taxon == "Hymenoptera") %>% # Subset abundance data for hymenoptera
+  mutate(Within_hymenoptera = 
+           case_when(
+             Family == "Formicidae" ~ "Ants",
+             Family == "Andrenidae" | Family == "Apidae" | Family == "Colletidae" | Family == "Dasypodaidae" |
+               Family == "Halictidae" | Family == "Megachilidae" | Family == "Meganomiidae" | Family == "Melittidae"|
+               Family == "Stenotritidae" ~ "Bees",   
+             Family != "Formicidae" | Family != "Andrenidae" | Family != "Apidae" | Family != "Colletidae" |
+               Family != "Dasypodaidae" | Family != "Halictidae" | Family != "Megachilidae" | Family != "Meganomiidae" |
+               Family != "Melittidae" | Family != "Stenotritidae" ~ "Wasps")) %>%
+  droplevels()
+
+# Sense check the data frame to make sure its worked
+sense_check <- hymenoptera_ab %>% dplyr::select(SSBST, Higher_taxon, Family, Genus, Species, Within_hymenoptera)
+ 
+# Turn bees, ants and wasps into a factor for analysis
+hymenoptera_ab$Within_hymenoptera <- as.factor(hymenoptera_ab$Within_hymenoptera)
+ 
+# check its worked
+levels(hymenoptera_ab$Within_hymenoptera)
+
+# Check the distributions
+hist(hymenoptera_ab$TotalAbundance) ; hist(hymenoptera_ab$logAbundance)
+
+# Have a look at sample sizes
+table(hymenoptera_ab$Predominant_land_use, hymenoptera_ab$Use_intensity)
+
+# Collapse land uses and use intensities to have a more even spread of the data
+ 
+hymenoptera_ab <- 
+  hymenoptera_ab %>%
+  # Collapse secondary veg
+  mutate(
+    Predominant_land_use = recode_factor(Predominant_land_use, 
+                                         "Young secondary vegetation" = "Secondary", 
+                                         "Intermediate secondary vegetation" = "Secondary",
+                                         "Mature secondary vegetation" = "Secondary"),
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")) # reset reference levels
+
+# Have a look at sample sizes
+table(hymenoptera_ab$Predominant_land_use, hymenoptera_ab$Use_intensity)
+
+# Few urban sites, proceed with caution
+```
+
+## Not enough data
+```{r}
+table(hymenoptera_ab$Predominant_land_use, hymenoptera_ab$Use_intensity, hymenoptera_ab$Within_hymenoptera)
+```
+
