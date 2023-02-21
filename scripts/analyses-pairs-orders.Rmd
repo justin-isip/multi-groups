@@ -379,6 +379,8 @@ model_data_ab <-
 table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 ```
 
+
+
 ### Order comparisons for abundance
 
 
@@ -1045,6 +1047,7 @@ diptera_hymenoptera_plot_SR <- combine_and_plot(dip_eff, hym_eff, diversity = "S
 rm(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7, hym_m1, hym_eff, diptera_hymenoptera, dip_eff)
 ```
 
+
 # diptera_coleoptera species richness
 ```{r}
 ### Subset our df of SSBST (site x order combination) only for the groups of interest
@@ -1094,9 +1097,6 @@ dip_eff <- predict_this_model(dip_m1, order = "Diptera")
 
 # Combine effects and relevel Diptera as reference
 diptera_coleoptera_plot_SR <- combine_and_plot(dip_eff, col_eff, relevel = "Diptera", diversity = "Species_richness")
-
-ggarrange(diptera_coleoptera_plot, diptera_coleoptera_plot_SR, nrow = 2)
-
 
 rm(dip_m1, dc_m1, col_eff, diptera_coleoptera, dip_eff)
 ```
@@ -1368,8 +1368,6 @@ lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
 # Combine effects and plot
 hymenoptera_lepidoptera_plot_SR <- combine_and_plot(hym_eff, lep_eff, diversity = "Species_richness")
 
-ggarrange(hymenoptera_lepidoptera_plot_AB, hymenoptera_lepidoptera_plot_SR, nrow = 2)
-
 rm(hym_eff, lep_eff, lep_m1, hl_m2, hymenoptera_lepidoptera)
 ```
 
@@ -1538,32 +1536,32 @@ rm(lep_eff, col_eff, lep_m1, cl_m2, coleoptera_lepidoptera)
 ```{r}
 
 dip_col <- ggarrange(diptera_coleoptera_plot_AB, diptera_coleoptera_plot_SR, nrow = 2)
-ggsave("../figures/dip_col.png", dip_col, height = 10, width = 12)
+ggsave("../figures/dip_col.png", dip_col, height = 6, width = 6)
 
 dip_hemi <- ggarrange(diptera_hemiptera_plot_AB,  diptera_hemiptera_plot_SR, nrow = 2)
-ggsave("../figures/dip_hemi.png", dip_hemi, height = 10, width = 12)
+ggsave("../figures/dip_hemi.png", dip_hemi, height = 6, width = 6)
 
 dip_hym <- ggarrange(diptera_hymenoptera_plot_AB, diptera_hymenoptera_plot_SR, nrow = 2)
-ggsave("../figures/dip_hym.png", dip_hym, height = 10, width = 12)
+ggsave("../figures/dip_hym.png", dip_hym, height = 6, width = 6)
      
 dip_lep <- ggarrange(diptera_lepidoptera_plot_AB, diptera_lepidoptera_plot_SR, nrow = 2)
-ggsave("../figures/dip_lep.png", dip_lep, height = 10, width = 12)         
+ggsave("../figures/dip_lep.png", dip_lep, height = 6, width = 6)         
 
 hym_col <- ggarrange(hymenoptera_coleoptera_plot_AB, hymenoptera_coleoptera_plot_SR, nrow = 2)
-ggsave("../figures/hym_col.png", hym_col, height = 10, width = 12)    
+ggsave("../figures/hym_col.png", hym_col, height = 6, width = 6)    
 
 hym_hemi <- ggarrange(hymenoptera_hemiptera_plot_AB, hymenoptera_hemiptera_plot_SR, nrow = 2)
-ggsave("../figures/hym_hemi.png", hym_hemi, height = 10, width = 12)    
+ggsave("../figures/hym_hemi.png", hym_hemi, height = 6, width = 6)    
 
 hym_lep <- ggarrange(hymenoptera_lepidoptera_plot_AB, hymenoptera_lepidoptera_plot_SR, nrow = 2)
-ggsave("../figures/hym_lep.png", hym_lep, height = 10, width = 12)    
+ggsave("../figures/hym_lep.png", hym_lep, height = 6, width = 6)    
         
 hemi_col <- ggarrange(hemiptera_coleoptera_plot_AB, hemiptera_coleoptera_plot_SR, nrow = 2)
-ggsave("../figures/hemi_col.png", hemi_col, height = 10, width = 12)    
+ggsave("../figures/hemi_col.png", hemi_col, height = 6, width = 6)    
   
 hemi_lep <- ggarrange(hemiptera_lepidoptera_plot_AB, hemiptera_lepidoptera_plot_SR, nrow = 2)
-ggsave("../figures/hemi_lep.png", hemi_lep, height = 10, width = 12)  
+ggsave("../figures/hemi_lep.png", hemi_lep, height = 6, width = 6)  
 
 col_lep <- ggarrange(coleoptera_lepidoptera_plot_AB, coleoptera_lepidoptera_plot_SR, nrow = 2)
-ggsave("../figures/col_lep.png", col_lep, height = 10, width = 12)  
+ggsave("../figures/col_lep.png", col_lep, height = 6, width = 6)  
 ```
