@@ -386,9 +386,9 @@ table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 
 ### Diptera
 
+
 # diptera_hymenoptera abundance
 ```{r}
-
 # Remove chubby datasets
 rm(arthropods, merged, diversity, arthropods_ssbst)
 
@@ -407,7 +407,7 @@ dhy_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_I
 # remove study
 dhy_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
     data = diptera_hymenoptera)
-
+  
 # Compare models 
 AIC(dhy_m1, dhy_m2, dhy_m3) # dhy_m2 best model
 
@@ -1296,9 +1296,6 @@ Anova(hh_m2)
 # Predict Hemiptera effects 
 hem_eff <- predict_this_model(hh_m2, order = "Hemiptera")
 
-Anova(hh_m2)
-summary(hh_m2)
-
 # relevel model with Hymenoptera as reference level
 hymenoptera_hemiptera <- within(hymenoptera_hemiptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
 
@@ -1530,6 +1527,19 @@ lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
 coleoptera_lepidoptera_plot_SR <- combine_and_plot(col_eff, lep_eff, diversity = "Species_richness")
 
 rm(lep_eff, col_eff, lep_m1, cl_m2, coleoptera_lepidoptera)
+```
+
+# Calculate sample size for each comparison of orders
+```{r}
+
+# Calculate number of rows for either abundance or SR model data depending on the two orders being compared
+  model_data_ab %>%
+  filter(Higher_taxon %in% c("Coleoptera", "Lepidoptera")) %>%
+  nrow()
+
+  model_data_sr %>%
+  filter(Higher_taxon %in% c("Coleoptera", "Lepidoptera")) %>%
+  nrow()
 ```
 
 ## GGSAVE
