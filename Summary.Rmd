@@ -431,7 +431,6 @@ legend <- ggplot(insects_ssbst, aes(x = Predominant_land_use, fill = order_fold)
   
 ```
 
-
 ```{r}
                   
 ```
