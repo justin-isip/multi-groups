@@ -379,7 +379,7 @@ library(rworldmap)
 library(rworldxtra)
 
 # Pull unique site coordinates
-data_coordinates <- insects_ssbst %>%
+data_coordinates <- model_data_ab %>%
   dplyr::select(Longitude, Latitude, order_fold) %>%
   unique()
 
@@ -404,7 +404,7 @@ base_map <- get_basemap() %>%
 site_distribution <- data_coordinates %>%
   ggplot() + 
   geom_polygon(aes(x = long, y = lat, group = group), data = base_map, fill = "lightgrey") +
-  geom_point(aes(x = Longitude, y = Latitude, colour = order_fold, fill = order_fold), alpha = 0.3, size = 3) +
+  geom_point(aes(x = Longitude, y = Latitude, colour = order_fold, fill = order_fold), alpha = 0.3, size = 2) +
   coord_map(projection = "mollweide") +
   theme(axis.text = element_blank(), 
         axis.ticks = element_blank(), 
@@ -419,7 +419,7 @@ site_distribution <- data_coordinates %>%
 
 ### Make the legend
 ### Make a new plot, extract just the legend from it,so I can combine with my other nicer plots
-legend <- ggplot(insects_ssbst, aes(x = Predominant_land_use, fill = order_fold)) + 
+legend <- ggplot(model_data_ab, aes(x = Predominant_land_use, fill = order_fold)) + 
   scale_fill_manual(values=group_colours)+
   guides(fill=guide_legend(title = "Order", title.position = "top", nrow=1, byrow=TRUE))+
   theme(legend.position = "bottom",
