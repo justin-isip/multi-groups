@@ -380,97 +380,6 @@ table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 ```
 
 
-
-```{r}
-# Start from the merged data not the model data
-five_orders <-
-  merged %>%
-  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%
-  group_by(SS) %>% # group by SS
-  mutate(
-    Multiple_groups = 
-      case_when(
-        (length(unique(Higher_taxon))) > 1 ~ "YES",
-        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>% # for each study create a new column called multiple groups = YES/NO 
-  # YES if there's more than one unique higher taxon within that study, NO if not
-  # Filter the data for studies with multiple groups
-  filter(Multiple_groups == "YES") %>% # filter for only the rows for studies (YES) with multiple groups
-  ungroup() %>% 
-  droplevels()
-  
-five_orders$Multiple_groups <- as.factor(five_orders$Multiple_groups)
-
-
-levels(five_orders$Multiple_groups)
-
-# Now insects only contains studies that sample more than one group of insects
-
-studies <-
-  insects %>%
-  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%
-  group_by(SS) %>% # group by SS
-  mutate(
-    Multiple_groups = 
-      case_when(
-        (length(unique(Higher_taxon))) == 2 ~ "2",
-        (length(unique(Higher_taxon))) == 2 ~ "2",
-        (length(unique(Higher_taxon))) == 3 ~ "3",
-        (length(unique(Higher_taxon))) == 4 ~ "4",
-        (length(unique(Higher_taxon))) == 5 ~ "5")) %>% 
-        ungroup() %>%
-        droplevels() 
-
-
-studies[studies$SS == "AD1_2008__Billeter 15",]
-
-# 784 rows for studies that do two groups
-two_ss <- studies %>% filter(Multiple_groups == "2") 
-# 1194 rows for studies that do three groups
-three_ss <- studies %>% filter(Multiple_groups == "3") 
-# 1500 rows for studies that do four groups
-four_ss <- studies %>% filter(Multiple_groups == "4") 
-# 2895 rows for studies that do all 5 groups
-five_ss <- studies %>% filter(Multiple_groups == "5") 
-
-
-
-z <-
-  model_data_ab %>%
-  filter(Phylum == "Arthropoda") %>% # filter only for arthropods, so we can include Arachnida
-  group_by(SS) %>% # group by SS
-  mutate(
-    Multiple_groups = 
-      case_when(
-        (length(unique(Higher_taxon))) > 1 ~ "YES",
-        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>% # for each study create a new column called multiple groups = YES/NO - 
-  # YES if there's more than one unique higher taxon within that study, NO if not
-  # Filter the data for studies with multiple groups
-  filter(Multiple_groups == "YES") %>% # filter for only the rows for studies (YES) with multiple groups
-  ungroup() %>% 
-  droplevels() 
-
-
-z[z$SS == "AD1_2008__Billeter 15",]
-
-
-levels(studies$Multiple_groups) 
-
-is.na(studies$Higher_taxon)
-
-
-b <- studies[!complete.cases(studies$Higher_taxon),]
-
-
-
-# 3 ways to do the same thing
-model_data_ab[model_data_ab$SS == "AD1_2007__Ockinger 1",]
-subset(model_data_ab, SS == "AD1_2007__Ockinger 1")
-a <- model_data_ab %>% filter(SS == "AD1_2007__Ockinger 1")
-
-
-```
-
-
 ### Order comparisons for abundance
 
 
@@ -1632,7 +1541,7 @@ rm(lep_eff, col_eff, lep_m1, cl_m2, coleoptera_lepidoptera)
   nrow()
 ```
 
-## GGSAVE
+#GGSAVE
 ```{r}
 
 dip_col <- ggarrange(diptera_coleoptera_plot_AB, diptera_coleoptera_plot_SR, nrow = 2)
