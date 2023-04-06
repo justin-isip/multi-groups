@@ -1,0 +1,261 @@
+---
+title: "treemaps"
+author: "Justin Isip"
+date: "2023-03-29"
+output: html_document
+---
+
+## R Markdown
+
+```{r}
+library(treemap)
+
+sampling <- 
+  model_data_ab %>% 
+  dplyr::select(Region, Sampling_method, Higher_taxon) %>% 
+  group_by(Region, Sampling_method, Higher_taxon) %>% 
+  tally()
+
+sampling <-
+  model_data_ab %>% 
+  # Create a new column for the two coarse land-use classes
+  mutate(
+    Broad_method =
+      case_when(
+        Sampling_method == "aerial transect" | Sampling_method == "malaise traps" | Sampling_method == "flower visitation observation" |
+        Sampling_method == "flight trap" | Sampling_method == "pan traps" | Sampling_method == "sweep net" | Sampling_method == "sweep_netting" | 
+        Sampling_method == "glue traps" | Sampling_method == "light trap" |  Sampling_method == "trap nests" |  
+        Sampling_method == "window trap"  ~ "Flying traps",
+        Sampling_method == "baited pit-fall traps" | Sampling_method == "pit-fall traps" |  Sampling_method == "suction samplers" |  
+        Sampling_method == "litter collection" ~ "Ground dwelling traps",
+        Sampling_method == "soil sample" |  Sampling_method == "soil cores along transects" |  Sampling_method == "soil core"  ~ "Soil dwelling traps",
+       TRUE ~ "Undetermined traps"
+       )) 
+
+      region <- 
+      sampling %>%
+      dplyr::select(Region, Higher_taxon) %>%
+      group_by(Region, Higher_taxon) %>% 
+      tally()
+      
+      treemap(region, index = c("Higher_taxon", "Region"),
+      vSize = "n",
+      type = "index",
+      fontsize.labels = c(15,10),
+      bg.labels= 0,
+      align.labels=list(
+      c("center", "center"), 
+      c("left", "top")
+        ),
+      palette = group_colours,
+      fontcolor.labels=c("white", "white"),
+      )
+
+
+      broad <- 
+      sampling %>%
+      dplyr::select(Broad_method, Higher_taxon) %>%
+      group_by(Broad_method, Higher_taxon) %>% 
+      tally()
+      
+      treemap(broad, index = c("Higher_taxon", "Broad_method"),
+      vSize = "n",
+      type = "index",
+      fontsize.labels = c(15,10),
+      bg.labels= 0,
+      align.labels=list(
+      c("center", "center"), 
+      c("right", "bottom")
+        ),
+      palette = group_colours,
+      fontcolor.labels=c("white", "white"),
+      )
+      
+      
+  group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#900c3f", Coleoptera = "#581845")
+
+sampling$Broad_method <- as.factor(sampling$Broad_method)
+levels(sampling$Broad_method)
+  
+  
+
+
+  
+
+```
+
+
+```{r}
+
+diversity <- readRDS("./data/diversity-2022-04-13-02-33-10.rds")
+
+print(nrow(diversity))
+
+counts <- as.data.frame(table(diversity$Order))
+
+names(counts)[1] <- "Order"
+
+lu <- function(x) length(unique(x))
+
+counts$Class <- diversity$Class[match(counts$Order, diversity$Order)]
+
+counts$Phylum <- diversity$Phylum[match(counts$Order, diversity$Order)]
+
+counts$Kingdom <- diversity$Kingdom[match(counts$Order, diversity$Order)]
+
+counts$Min_n_species <- tapply(diversity$Taxon_name_entered, diversity$Order, FUN=lu)
+
+levels(counts$Order) <- c(levels(counts$Order), "Unknown")
+
+levels(counts$Order)[1] <- "Unknown"
+
+levels(counts$Class) <- c(levels(counts$Class), "Unknown")
+
+levels(counts$Phylum) <- c(levels(counts$Phylum), "Unknown")
+
+levels(counts$Kingdom) <- c(levels(counts$Kingdom), "Unknown")
+
+counts$Class[counts$Order=="Unknown"] <- "Unknown"
+
+counts$Phylum[counts$Order=="Unknown"] <- "Unknown"
+
+counts$Kingdom[counts$Order=="Unknown"] <- "Unknown"
+
+treemap(dtf=counts, index=c("Phylum", "Class", "Order"), vSize="Freq", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of PREDICTS data records by Order")
+
+treemap(dtf=counts, index=c("Phylum", "Class", "Order"), vSize="Min_n_species", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of taxa in PREDICTS database per Order")
+
+#knitr::kable(counts, caption="Number of records in PREDICTS database per family")
+
+insects <- droplevels(subset(diversity, Phylum=="Arthropoda"))
+
+print(str(insects)) # Summarises the structure of the data frame
+
+sources <- unique(insects$Source_ID)
+
+saveRDS(sources, "ArthropodSources.Rds")
+```
+
+## Taxonomic spread of records
+
+Three orders have over 100,000 rows of data: Coleoptera, Hymenoptera and Lepidoptera. Orthoptera has more then tripled since March 2021 (when it was just over 6000 records).
+
+```{r taxonomic-spread-records, echo=FALSE}
+library(treemap)
+library(knitr)
+counts <- as.data.frame(table(insects$Higher_taxon))
+treemap(dtf=counts, index="Var1", vSize="Freq", title="Breakdown of records by Order")
+knitr::kable(counts, caption="Number of records per taxonomic order")
+```
+## Geographic spread of records
+
+There are data from 70 countries. New Zealand is still the surprise leader, but Brazil has risen up the table. When aggregating to UN subregions, it's clear that the data are not richest in the most diverse regions. The density plot vs latitude shows how temperate-biased the data are; but also that they are less temperate-biased than they were, with the peak at low southern latitudes being new since March 2021.
+
+```{r geographic-spread-records, echo=FALSE}
+counts <- as.data.frame(table(insects$Country))
+treemap(dtf=counts, index="Var1", vSize="Freq", title="Breakdown of records by country")
+knitr::kable(counts, caption = "Number of records per country")
+counts <- as.data.frame(table(insects$UN_subregion))
+treemap(dtf=counts, index="Var1", vSize="Freq", title="Breakdown of records by UN subregion")
+knitr::kable(counts, caption = "Number of records per UN subregion")
+plot(density(insects$Latitude), xlab="Latitude", main="Insect records are very temperate-biased")
+```
+
+
+## Biome spread of records
+
+There are data from all the biomes apart from Tundra. Temperate broadleaf & mixed forests is the dominant biome but Tropical & subtropical moist broadleaf forest is also reasonably data-rich.
+
+```{r biome-spread-records, echo=FALSE}
+counts <- as.data.frame(table(insects$Biome))
+treemap(dtf=counts, index="Var1", vSize="Freq", title="Breakdown of records by biome")
+knitr::kable(counts, caption = "Number of records per biome")
+```
+## Summary of land-use classes per biome
+
+Looking within each biome in turn, it is clear that some land-use classes are currently not represented at all in the database, highlighting existing data gaps.
+
+```{r land-use-per-biome, echo=FALSE}
+library(tables)
+insects <- droplevels(insects)
+counts <- as.data.frame(table(insects$Predominant_habitat, insects$Biome))
+names(counts)[c(1:2)] <- c("Land use class", "Biome")
+knitr::kable(counts, caption = "Number of records per land-use/biome combination")
+```
+
+## Map
+```{r map-sites, echo=FALSE}
+library(maps)
+map()
+points(insects$Longitude, insects$Latitude, pch=19, col="blue")
+```
+
+
+# Which studies have taxa not matched to COL?
+```{r unmatched-names, echo=FALSE}
+unmatched <- subset(diversity, is.na(diversity$COL_ID))
+unmatched <- droplevels(unmatched)
+counts <- as.data.frame(table(unmatched$SS))
+names(counts) <- c("SS", "records")
+counts$taxa <- NA
+counts$first_taxon <- NA
+for (i in 1:nrow(counts)){
+  SS_sub <- subset(unmatched, SS==counts$SS[i])
+  counts$taxa[i] <- length(unique(SS_sub$Taxon_name_entered))
+  counts$first_taxon[i] <- make.names(as.character(SS_sub$Taxon_name_entered[1]))
+}
+knitr::kable(counts, caption = "Number of unmatched records per Study")
+print(paste(sum(counts$taxa), "taxa without matches in COL2013"))
+```
+
+```{r first-records-in-each-site}
+each.site <- unique(insects$SSBS)
+firsts <- insects[match(each.site, insects$SSBS),]
+plot(density(firsts$Latitude), main="Density of arthropod sites with latitude")
+```
+
+```{r breakdown-within-orders}
+counts <- as.data.frame(table(insects$Family))
+names(counts)[1] <- "Family"
+lu <- function(x) length(unique(x))
+counts$Order <- insects$Order[match(counts$Family, insects$Family)]
+counts$Min_n_species <- tapply(insects$Taxon_name_entered, insects$Family, FUN=lu)
+levels(counts$Family)[1] <- "Unknown"
+levels(counts$Order) <- c(levels(counts$Order), "Unknown")
+counts$Order[counts$Family=="Unknown"] <- "Unknown"
+treemap(dtf=counts, index=c("Order", "Family"), vSize="Freq", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of PREDICTS arthropod data records by family")
+treemap(dtf=counts, index=c("Order", "Family"), vSize="Min_n_species", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of arthropod species in PREDICTS database per family")
+knitr::kable(counts, caption="Number of records in PREDICTS database per family")
+write.csv(counts, "output/Arthropod families in PREDICTS.csv")
+```
+```{r treemap-countries}
+each.site <- unique(diversity$SSBS)
+firsts <- diversity[match(each.site, diversity$SSBS),]
+counts <- as.data.frame(table(firsts$Country))
+names(counts)[1] <- "Country"
+lu <- function(x) length(unique(x))
+counts$UN_subregion <- firsts$UN_subregion[match(counts$Country, firsts$Country)]
+counts$UN_region <- firsts$UN_region[match(counts$Country, firsts$Country)]
+treemap(dtf=counts, index=c("UN_region", "UN_subregion", "Country"), vSize="Freq", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of PREDICTS sites by country")
+#treemap(dtf=counts, index=c("Order", "Family"), vSize="Min_n_species", fontsize.labels=10, lowerbound.cex.labels = 0.1, title="Breakdown of arthropod species in PREDICTS database per family")
+```
+
+# To add
+
+```{r playing}
+#For now, using the static values of what's in PREDICTS, which is in the same file - 
+#But I should change it so that the PREDICTS data are generated by the walkthrough but the global data read in
+spp <- read.csv("data/Arthropod families in PREDICTS with global S.csv")
+plot(spp$Min_n_species ~ spp$Global_S_described, col=as.factor(spp$Order), pch=19, log="xy",
+     xlab="Global species diversity of Family", ylab="Min spp of Family in PREDICTS database")
+abline(a=-2, b=1, col="red")
+abline(a=log10(0.05), b=1, col="red", lty=2)
+abline(a=log10(0.002), b=1, col="red", lty=2)
+plot(spp$Freq ~ spp$Global_S_described, col=as.factor(spp$Order), pch=19, log="xy",
+     xlab="Global species diversity of Family", ylab="Records of Family in PREDICTS database")
+abline(a=0, b=1, col="red")
+abline(a=1, b=1, col="red", lty=2)
+abline(a=-1, b=1, col="red", lty=2)
+
+```
+
