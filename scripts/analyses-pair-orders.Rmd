@@ -1,0 +1,1850 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: "2023-03-07"
+output: html_document
+---
+
+### Clear the workspace
+```{r}
+rm(list=ls())
+```
+
+### Load required packages
+```{r}
+library(tidyverse) # data processing
+library(lme4) # for mixed effects models
+library(car) # for getting anova tables with significance values
+library(DHARMa) # for model criticism plots
+library(MuMIn) # for checking explanatory power of mixed effects models
+library(sjPlot) # for visualising results
+library(effects) # for extracting model effects
+library(merTools) # useful for a few things, but we're using it for extracting estimates for plotting
+library(emmeans) # testing multiple comparisons (but also useful for plotting)
+library(coefplot) # visualising model coefficients
+library(cli)
+library(ggeffects)
+library(ggpubr)
+```
+
+### Load in model plot function
+```{r}
+
+## Load in a model criticism function - this function is used for checking the residual/model diagnostic plots to test that the model is meeting all of its assumptions
+model_plot <-function(mod.for.plot){
+  require(lattice)
+  
+  # set up a 2 x 2 grid for plotting
+  par(mfrow = c(2,2))
+  par(ask = TRUE)
+  
+  # qqplot
+  qqnorm(resid(mod.for.plot))
+  qqline(resid(mod.for.plot), col = 2)
+  
+  # residuals vs fitted plot
+  plot(fitted(mod.for.plot), resid(mod.for.plot),xlab = "Fitted Values", ylab = "Residuals", main = "Residuals vs fitted")
+  abline(h=0, lty=2)
+  lines(smooth.spline(fitted(mod.for.plot), resid(mod.for.plot)), col = "red")
+  
+  # histogram of residuals
+  hist(resid(mod.for.plot))
+  
+  # random effects distribution
+  dotplot(ranef(mod.for.plot,condVar = TRUE))
+}
+```
+
+### Load add_order_fold function to split the diversity data into exclusive insect orders 
+```{r}
+
+add_order_fold <- function(data, folds = "default", verbose = TRUE){
+  #
+  # By default (and nothing else is yet coded up), this puts each row into
+  # an insect order that each have a decent, number of rows of data. 
+  # This allows site-level values to be obtained within
+  # each of the order folds in turn.
+  
+  # Set up order_fold, a factor that holds the fold identity.
+  data$order_fold <- rep(NA, nrow(data))
+  
+  # Rows are assigned to folds based on the higher taxonomy information.
+  if (folds == "default"){
+    data$order_fold[data$Higher_taxon == "Diptera"] <- "Diptera"
+    data$order_fold[data$Higher_taxon == "Coleoptera"] <- "Coleoptera"
+    data$order_fold[data$Higher_taxon == "Lepidoptera"] <- "Lepidoptera"
+    data$order_fold[data$Higher_taxon == "Hymenoptera"] <- "Hymenoptera"
+    data$order_fold[data$Higher_taxon == "Hemiptera"] <- "Hemiptera"
+    data$order_fold[data$Higher_taxon == "Arachnida"] <- "Arachnida"
+    data$order_fold[data$Higher_taxon == "Odonata" |
+                    data$Higher_taxon == "Trichoptera" |
+                    data$Higher_taxon == "Ephemeroptera" |
+                    data$Higher_taxon == "Plecoptera" ] <- "Aquatics"
+    data$order_fold[data$Phylum == "Arthropoda" & 
+                      data$Higher_taxon != "Diptera" & 
+                      data$Higher_taxon != "Coleoptera" &
+                      data$Higher_taxon != "Lepidoptera" &
+                      data$Higher_taxon != "Hymenoptera" &
+                      data$Higher_taxon != "Hemiptera" &
+                      data$Higher_taxon != "Arachnida" &
+                      data$Higher_taxon != "Odonata" &
+                      data$Higher_taxon != "Trichoptera" &
+                      data$Higher_taxon != "Ephemeroptera" &
+                      data$Higher_taxon != "Plecoptera"] <- "OtherArthropods"
+  }else{
+    stop("Only the default folds have been coded up so far!")
+  }
+  
+  data$order_fold <- as.factor(data$order_fold)
+  
+  if (verbose == TRUE){
+    # By default, report on the breakdown of records per fold.
+    cat("Numbers of rows within each order fold are as follows:\n\n")
+    print(table(data$order_fold))
+  }
+  
+  return(data)
+}
+
+```
+
+### Load function to calculate total abundance for each site x order_fold combination
+```{r}
+# Calculate total abundance for each site --------------------------------------
+# Modified to clarify reporting is on site x fold combinations
+get_site_abundances_order <- function(data, 
+                                order_folds = FALSE,
+                                verbose = TRUE){
+  # This calculates site metrics for each site or, if desired, each order fold
+  # within each site.
+  
+  # Make it a data frame to avoid having to deal with a tibble.
+  data <- as.data.frame(data)
+  
+  # Set up a variable for uniquely identifying the site x order_fold combination
+  # or, if order_folds == FALSE, the site. This is what grouping is then done
+  # by.
+  print(table(data$order_fold))
+  
+  if (order_folds == TRUE){
+    data$the_order_folds <- data$order_fold
+  }else{
+    data$the_order_folds <- ""
+  }
+  
+  # Just for debugging
+  print(table(data$the_order_folds))
+  
+  # Start to calculate site-level metrics.
+  sites <- data %>%
+    
+    # pull out only the merged diversity data
+    distinct(merge_ID, .keep_all = TRUE) %>%
+    
+    # Re-make SSB and SSBS values since we've now dropped a bunch of values; and
+    # also add SSBST which is that order x site combo. The trimws is because the
+    # SSBST would otherwise end in a space if order_folds == FALSE.
+    mutate(SS = paste(Source_ID, Study_number),
+           SSB = paste(SS, Block),
+           SSBS = paste(SSB, Site_number),
+           SSBST = trimws(paste(SSBS, the_order_folds))) %>%
+    
+    # group by SSBST (each unique value corresponds to a unique site x fold)
+    group_by(SSBST) %>%
+    
+    # Now add up all the abundance measurements within each site and also 
+    # estimate coverage.
+    mutate(TotalAbundance = ifelse(Diversity_metric_type == "Abundance",
+                                   sum(merged_diversity, na.rm = TRUE),
+                                   # If the diversity metric type isn't 
+                                   # Abundance, then leave the TotalAbundance 
+                                   # measurement as NA.
+                                   NA),
+           
+           SpeciesRichness = ifelse(Diversity_metric_type == "Species richness",
+                                    merged_diversity,
+                                    # for abundance and occurrence measurements,
+                                    # count the number of unique species names 
+                                    # that are present at the site 
+                                    n_distinct(Best_guess_binomial[merged_diversity > 0])),
+           
+           coverage = get.SC2(merged_diversity)) %>%
+    
+    # ungroup
+    ungroup() %>%
+    
+    # pull out unique site/fold combinations.
+    distinct(SSBST, .keep_all = TRUE) %>%
+    
+    # now group by Study ID and fold.
+    group_by(SS, the_order_folds) %>%
+    
+        # pull out the maximum abundance for each study/fold combination.
+    mutate(MaxAbundance = max(TotalAbundance),
+           MinNonZero = min(TotalAbundance[TotalAbundance > 0])) %>%
+    
+    # ungroup.
+    ungroup() %>%
+    
+    # now rescale total abundance, so that within each study, the maximum is 1.
+    mutate(RescaledAbundance = TotalAbundance/MaxAbundance) %>%
+    
+    mutate(sqrtRescaledAbundance = sqrt(RescaledAbundance)) 
+  
+    # If a study reports abundance as a count, add 1 to all values; otherwise
+  # add 1/2 the minimum non-zero value; then log-transform to get a useful
+  # logAbundance value that may be more symmetric than sqrtRescaledAbundance.
+  sites$to_add <- ifelse(sites$Diversity_metric_unit %in%
+                           c("individuals", "times observed"), 1,
+                         sites$MinNonZero/2)
+  sites$logAbundance <- log(sites$TotalAbundance + sites$to_add)
+  
+  
+  # Remove NA values and drop levels
+  sites <- as.data.frame(sites)
+  sites <- droplevels(subset(sites, !is.na(sqrtRescaledAbundance)))
+  
+  if (verbose == TRUE){
+    # Summarise structure of site-level data frame
+    cat("\nThere are abundance data for:\n")
+    cat(paste("   ", sum(!is.na(sites$sqrtRescaledAbundance)), "sites, from\n"))
+    cat(paste("   ", 
+              length(unique(sites$SS[!is.na(sites$sqrtRescaledAbundance)])), 
+              "studies and\n"))
+    cat(paste("   ", 
+              length(unique(sites$Source_ID[!is.na(sites$sqrtRescaledAbundance)])),
+              "sources.\n"))
+  }
+  
+  # Set provenance attributes
+  attr(sites, which = "diversity_extract") <- 
+    attr(data, which = "diversity_extract")
+  attr(sites, which = "is_merged") <- attr(data, which = "is_merged")
+  attr(sites, which = "order_folds") <- order_folds 
+  attr(sites, which = "when_Created") <- Sys.time()
+  
+  return(sites)
+}
+
+```
+
+### Load all other functions
+```{r}
+source("/Applications/PhD/Andy/data_prep_functions.R")
+source("/Applications/PhD/Andy/site_comparison_functions.R")
+source("https://highstat.com/Books/Book2/HighstatLibV10.R") # collinearity
+source("/Applications/PhD/Projects/multi-groups/scripts/combine_and_plot_function.R")
+source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
+```
+
+### Read in the data
+```{r}
+diversity <- readRDS("./data/diversity-2022-04-13-02-33-10.rds")
+```
+
+### Correct for sampling effort
+```{r}
+if(check_sampling_effort_nas(diversity) ==
+   FALSE) stop("Some studies have NA for sampling effort in only some sites!")
+
+diversity <- correct_for_sampling_effort(diversity)
+print(summarise_diversity(diversity))
+```
+
+### Merge sites
+```{r}
+merged <- merge_sites(diversity, verbose = TRUE) 
+```
+
+# Filter merged for five orders of interest and then subset for studies that look at more than one of those orders
+```{r}
+# Start from the merged data not the model data
+five_orders <-
+  merged %>%
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
+  # filter here for the orders of interest so that when we group by study, we are only looking at studies that observe those five orders
+  group_by(SS) %>% # group by SS
+  mutate(
+    Multiple_groups = 
+      case_when(
+        (length(unique(Higher_taxon))) > 1 ~ "YES",
+        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>% 
+  filter(Multiple_groups == "YES") %>% 
+  droplevels()
+
+# five_orders only contains studies that look at more than one of those five orders
+
+levels(five_orders$Higher_taxon)
+table(five_orders$Higher_taxon)
+```
+
+### Add_order_fold to allow taxonomic cross-validation 
+```{r}
+# Just adds order_fold column
+five_orders <- add_order_fold(five_orders, verbose = TRUE)
+levels(five_orders$order_fold)
+
+```
+
+### Calculate site level diversity metrics using get_site_abundances_order and order_fold for each site x order combination
+```{r}
+
+five_orders <- get_site_abundances_order(five_orders, 
+                                  order_folds = TRUE, verbose = TRUE)
+
+table(five_orders$order_fold) # number of rows for each site x order combination
+
+# We have 8065 sites for the five orders in multi group studies
+
+```
+
+### Fix up your explanatory variables 
+```{r}
+
+# Rename predominant habitat since its not really habitat we're looking at
+five_orders <- rename(five_orders,
+                Predominant_land_use = Predominant_habitat)
+
+
+# Relevel the land use and use intensity classes
+five_orders <- five_orders %>%
+  
+  mutate(
+    
+    # collapse primary forest and non-forest together into primary vegetation as these aren't well distinguished
+    Predominant_land_use = recode_factor(Predominant_land_use, 
+                                         "Primary forest" = "Primary", 
+                                         "Primary non-forest" = "Primary"),
+    
+    # indeterminate secondary veg and cannot decide get NA
+    Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
+    Predominant_land_use = na_if(Predominant_land_use, "Cannot decide"), 
+    Use_intensity = na_if(Use_intensity, "Cannot decide"),
+    
+    # set reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# take a look at the LandUse/Use intensity split
+table(five_orders$Predominant_land_use, five_orders$Use_intensity)
+
+# Not many MSV intense use sites, primary intense use sites and young secondary light use, might have to collapse light and intense use into one
+# But luckily can still keep all 3 secondary veg categories
+```
+
+### Complete cases
+```{r}
+
+# This will drop all the rows with NAs for abundance, land use or use intensity so we have complete data for modelling
+model_data_ab <- drop_na(five_orders, 
+                         RescaledAbundance, Predominant_land_use,
+                         Use_intensity)
+
+model_data_sr <- drop_na(five_orders, 
+                         SpeciesRichness, Predominant_land_use,
+                         Use_intensity)
+
+#sum(is.na(five_orders$RescaledAbundance))
+#sum(is.na(five_orders$SpeciesRichness))
+#sum(is.na(five_orders$Predominant_land_use))
+
+# There are no NAs for either of our explanatory variables so model_data_ab and model_data_sr are the same dataframe
+```
+
+### Prepare the abundance model dataframe
+```{r}
+
+# Log transform rescaled abundance
+model_data_ab$logAbundance <- log(model_data_ab$RescaledAbundance + 1)
+
+# Check the distributions
+hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance)
+
+# Have a look at sample sizes
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
+
+# Collapse intense and light land use intensities to have a more even spread of the data
+model_data_ab <- 
+  model_data_ab %>%
+  mutate(
+    Use_intensity = recode_factor(Use_intensity,
+                                  "Intense use" = "High_use",
+                                  "Light use" = "High_use"),
+# reset reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+# Have a look at sample sizes
+table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
+```
+
+
+### Order comparisons for abundance
+
+
+### Diptera
+
+
+# diptera_hymenoptera abundance
+```{r}
+# Remove chubby datasets
+rm(merged, diversity)
+
+# Filter for studies that only compare hymenoptera and diptera
+dip_hym_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+diptera_hymenoptera <- model_data_ab %>% filter(SS %in% dip_hym_ss) %>% filter(Order %in% c("Hymenoptera", "Diptera")) 
+
+# d <- b %>% filter(Order %in% c("Hymenoptera", "Diptera")) %>% group_by(SSBS) %>% tally() %>% View() filter(n == 2) %>% pull(SSBS) %>% unique()
+# b %>% filter(SSBS %in% d) %>% filter(Order %in% c("Hymenoptera", "Diptera")) %>% nrow()
+# e <- b %>% group_by(SSBS) %>% tally() %>% View()
+
+
+# maximal model
+dhy_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = diptera_hymenoptera)
+
+# remove block
+dhy_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hymenoptera)
+
+# remove study
+dhy_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_hymenoptera)
+  
+# Compare models 
+AIC(dhy_m1, dhy_m2, dhy_m3) # dhy_m2 best model
+
+rm(dhy_m1, dhy_m3)
+
+Anova(dhy_m2)
+
+## Backwards stepwise selection of fixed effects 
+
+## Model with the interaction removed but both predictors still present
+dhy_m4 <- lmer(logAbundance ~ Predominant_land_use + Higher_taxon + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Just land use as predictor
+dhy_m5 <- lmer(logAbundance ~ Predominant_land_use + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Just Higher_taxon as the predictor
+dhy_m6 <- lmer(logAbundance ~ Higher_taxon + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Make a null, intercept only model
+dhy_m7 <- lmer(logAbundance ~ (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Compare the models
+AIC(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7)
+model.sel(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7)
+
+# dhy_m2 still the best
+
+# model estimates
+summary(dhy_m2)
+```
+### Simulate diptera_hymenoptera effects
+```{r}
+# Predict Diptera effects
+dip_eff <- predict_this_model(dhy_m2, order = "Diptera")
+
+# relevel model with hymenoptera as reference level
+diptera_hymenoptera <- within(diptera_hymenoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model
+hym_1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hymenoptera)
+
+# Predict hymenoptera effects
+hym_eff <- predict_this_model(hym_1, order = "Hymenoptera")
+
+# Combine effects and plot them
+diptera_hymenoptera_plot_AB <- combine_and_plot(dip_eff, hym_eff, diversity = "Abundance")
+
+rm(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7, hym_1, hym_eff, diptera_hymenoptera, dip_eff, hym_dip)
+    
+```
+
+# diptera_coleoptera abundance
+```{r}
+
+# Studies
+dip_col_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+diptera_coleoptera <- model_data_ab %>% filter(SS %in% dip_col_ss) %>% filter(Order %in% c("Diptera", "Coleoptera")) 
+
+# maximal model
+dc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = diptera_coleoptera)
+
+# remove block
+dc_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_coleoptera)
+
+# remove study
+dc_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_coleoptera)
+
+# Compare models 
+AIC(dc_m1, dc_m2, dc_m3) # dc_m1 best model
+
+rm(dc_m2, dc_m3)
+
+# model estimates
+summary(dc_m1)
+Anova(dc_m1)
+```
+### Simulate diptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(dc_m1, order = "Coleoptera")
+
+# relevel model with Diptera as reference level
+diptera_coleoptera <- within(diptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Diptera"))
+
+# maximal model
+dip_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+    data = diptera_coleoptera)
+
+model_plot(dip_m1)
+summary(dip_m1)
+Anova(dip_m1)
+
+# Predict Diptera effects - remember that this overwrites previous effects of Diptera model
+dip_eff <- predict_this_model(dip_m1, order = "Diptera")
+
+# Combine effects and relevel Diptera as reference
+diptera_coleoptera_plot_AB <- combine_and_plot(dip_eff, col_eff, relevel = "Diptera", diversity = "Abundance")
+
+rm(dip_m1, dc_m1, col_eff, diptera_coleoptera, dip_eff)
+
+```
+
+# diptera_hemiptera abundance
+```{r}
+
+# Studies
+dip_hemi_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+diptera_hemiptera <- model_data_ab %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) 
+
+# maximal model
+dh_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = diptera_hemiptera)
+
+# remove block
+dh_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hemiptera)
+
+# remove study
+dh_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_hemiptera)
+
+# Compare models 
+AIC(dh_m1, dh_m2, dh_m3) # dh_m2 best model
+
+rm(dh_m1, dh_m3)
+
+# model estimates
+summary(dh_m2)
+Anova(dh_m2)
+```
+### Simulate diptera_hemiptera effects
+```{r}
+# Predict Diptera effects 
+dip_eff <- predict_this_model(dh_m2, order = "Diptera")
+
+# relevel model with Hemiptera as reference level
+diptera_hemiptera <- within(diptera_hemiptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hemiptera"))
+
+# maximal model with Hemiptera as ref
+hemi_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hemiptera)
+
+model_plot(hemi_m1)
+summary(hemi_m1)
+Anova(hemi_m1)
+
+# Predict Hemiptera effects 
+hemi_eff <- predict_this_model(hemi_m1, order = "Hemiptera")
+
+# Combine effects and plot
+diptera_hemiptera_plot_AB <- combine_and_plot(dip_eff, hemi_eff, diversity = "Abundance") 
+
+rm(dip_eff, hemi_eff, hemi_m1, dh_m2, diptera_hemiptera)
+```
+
+# diptera_lepidoptera abundance
+```{r}
+# Studies
+dip_lep_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+diptera_lepidoptera <- model_data_ab %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) 
+
+# maximal model
+dl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = diptera_lepidoptera)
+
+# remove block
+dl_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_lepidoptera)
+
+# remove study
+dl_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_lepidoptera)
+
+# Compare models 
+AIC(dl_m1, dl_m2, dl_m3) # dl_m2 best model
+
+rm(dl_m1, dl_m3)
+
+# model estimates
+summary(dl_m2)
+Anova(dl_m2)
+```
+### Simulate diptera_lepidoptera effects
+```{r}
+# Predict Diptera effects 
+dip_eff <- predict_this_model(dl_m2, order = "Diptera")
+
+# relevel model with Lepidoptera as reference level
+diptera_lepidoptera <- within(diptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_lepidoptera)
+
+model_plot(lep_m1)
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+diptera_lepidoptera_plot_AB <- combine_and_plot(dip_eff, lep_eff, diversity = "Abundance")
+
+rm(dip_eff, lep_eff, lep_m1, dl_m2, diptera_lepidoptera)
+```
+
+
+## Hymenoptera
+
+# hymenoptera_coleoptera abundance
+```{r}
+hym_col_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hymenoptera_coleoptera <- model_data_ab %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) 
+
+# maximal model
+hc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = hymenoptera_coleoptera)
+
+# remove block
+hc_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_coleoptera)
+
+# remove study
+hc_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_coleoptera)
+
+# Compare models 
+AIC(hc_m1, hc_m2, hc_m3) # hc_m1 best model
+
+rm(hc_m2, hc_m3)
+
+# model estimates
+summary(hc_m1)
+Anova(hc_m1)
+```
+### Simulate hymenoptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(hc_m1, order = "Coleoptera")
+
+# relevel model with Hymenoptera as reference level
+hymenoptera_coleoptera <- within(hymenoptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model with Hymenoptera as ref
+hym_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + + (1 | SSB),
+    data = hymenoptera_coleoptera)
+
+model_plot(hym_m1)
+summary(hym_m1)
+Anova(hym_m1)
+
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hym_m1, order = "Hymenoptera")
+
+# Combine effects and plot
+hymenoptera_coleoptera_plot_AB <- combine_and_plot(col_eff, hym_eff, diversity = "Abundance")
+
+rm(col_eff, hym_eff, hym_m1, hc_m1, hymenoptera_coleoptera)
+```
+
+# hymenoptera_hemiptera abundance
+```{r}
+# Studies
+hym_hemi_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hymenoptera_hemiptera <- model_data_ab %>% filter(SS %in% hym_hemi_ss) %>% filter(Order %in% c("Hymenoptera", "Hemiptera")) 
+
+# maximal model
+hh_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = hymenoptera_hemiptera)
+
+# remove block
+hh_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_hemiptera)
+
+# remove study
+hh_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_hemiptera)
+
+# Compare models 
+AIC(hh_m1, hh_m2, hh_m3) # hh_m2 best model
+
+rm(hh_m1, hh_m3)
+
+# model estimates
+summary(hh_m2)
+Anova(hh_m2)
+```
+### Simulate hymenoptera_hemiptera effects
+```{r}
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hh_m2, order = "Hemiptera")
+
+# relevel model with Hymenoptera as reference level
+hymenoptera_hemiptera <- within(hymenoptera_hemiptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model with Hymenoptera as ref
+hym_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_hemiptera)
+
+model_plot(hym_m1)
+summary(hym_m1)
+Anova(hym_m1)
+
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hym_m1, order = "Hymenoptera")
+
+# Combine effects and plot
+hymenoptera_hemiptera_plot_AB <- combine_and_plot(hem_eff, hym_eff, diversity = "Abundance")
+
+rm(hem_eff, hym_eff, hym_m1, hh_m2, hymenoptera_hemiptera)
+```
+
+# hymenoptera_lepidoptera abundance
+```{r}
+# Studies
+hym_lep_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hymenoptera_lepidoptera <- model_data_ab %>% filter(SS %in% hym_lep_ss) %>% filter(Order %in% c("Hymenoptera", "Lepidoptera")) 
+
+# maximal model
+hl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = hymenoptera_lepidoptera)
+
+# remove block
+hl_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_lepidoptera)
+
+# remove study
+hl_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_lepidoptera)
+
+# Compare models 
+AIC(hl_m1, hl_m2, hl_m3) # hl_m2 best model
+
+rm(hl_m1, hl_m3)
+
+# model estimates
+summary(hl_m2)
+Anova(hl_m2)
+```
+### Simulate hymenoptera_lepidoptera effects
+```{r}
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hl_m2, order = "Hymenoptera")
+
+# relevel model with Lepidoptera as reference level
+hymenoptera_lepidoptera <- within(hymenoptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+hymenoptera_lepidoptera_plot_AB <- combine_and_plot(hym_eff, lep_eff, diversity = "Abundance")
+
+rm(hym_eff, lep_eff, lep_m1, hl_m2, hymenoptera_lepidoptera)
+```
+
+## Hemiptera
+
+# hemiptera_lepidoptera abundance
+```{r}
+
+# Studies
+hemi_lep_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hemiptera_lepidoptera <- model_data_ab %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera"))
+
+# maximal model
+hl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = hemiptera_lepidoptera)
+
+# remove block
+hl_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_lepidoptera)
+
+# remove study
+hl_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hemiptera_lepidoptera)
+
+# Compare models 
+AIC(hl_m1, hl_m2, hl_m3) # hl_m2 best model
+
+rm(hl_m1, hl_m3)
+
+# model estimates
+summary(hl_m2)
+Anova(hl_m2)
+```
+### Simulate hemiptera_lepidoptera effects
+```{r}
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hl_m2, order = "Hemiptera")
+
+# relevel model with Lepidoptera as reference level
+hemiptera_lepidoptera <- within(hemiptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+hemiptera_lepidoptera_plot_AB <- combine_and_plot(hem_eff, lep_eff, diversity = "Abundance")
+
+rm(hem_eff, lep_eff, lep_m1, hl_m2, hemiptera_lepidoptera)
+```
+
+# hemiptera_coleoptera abundance
+```{r}
+# Studies
+hemi_col_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hemiptera_coleoptera <- model_data_ab %>% filter(SS %in% hemi_col_ss) %>% filter(Order %in% c("Hemiptera", "Coleoptera")) 
+
+# maximal model
+hc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = hemiptera_coleoptera)
+
+# remove block
+hc_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_coleoptera)
+
+# remove study
+hc_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hemiptera_coleoptera)
+
+# Compare models 
+AIC(hc_m1, hc_m2, hc_m3) # hc_m1 best model
+
+rm(hc_m2, hc_m3)
+
+# model estimates
+summary(hc_m1)
+Anova(hc_m1)
+```
+### Simulate hemiptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(hc_m1, order = "Coleoptera")
+
+# relevel model with Hemiptera as reference level
+hemiptera_coleoptera <- within(hemiptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hemiptera"))
+
+# maximal model with Hemiptera as ref
+hem_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+    data = hemiptera_coleoptera)
+
+summary(hem_m1)
+Anova(hem_m1)
+
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hem_m1, order = "Hemiptera")
+
+# Combine effects and plot
+hemiptera_coleoptera_plot_AB <- combine_and_plot(col_eff, hem_eff, diversity = "Abundance")
+
+rm(hem_eff, col_eff, hem_m1, hc_m1, hemiptera_coleoptera)
+```
+
+
+## Coleoptera
+
+### coleoptera_lepidoptera abundance
+```{r}
+# Studies
+col_lep_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+coleoptera_lepidoptera <- model_data_ab %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera"))
+
+# maximal model
+cl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = coleoptera_lepidoptera)
+
+# remove block
+cl_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = coleoptera_lepidoptera)
+
+# remove study
+cl_m3 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = coleoptera_lepidoptera)
+
+# Compare models 
+AIC(cl_m1, cl_m2, cl_m3) # cl_m1 best model
+
+rm(cl_m2, cl_m3)
+
+# model estimates
+summary(cl_m1)
+Anova(cl_m1)
+```
+### Simulate coleoptera_lepidoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(cl_m1, order = "Coleoptera")
+
+# relevel model with Lepidoptera as reference level
+coleoptera_lepidoptera <- within(coleoptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+    data = coleoptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+coleoptera_lepidoptera_plot_AB <- combine_and_plot(col_eff, lep_eff, diversity = "Abundance")
+
+rm(lep_eff, col_eff, lep_m1, cl_m1, coleoptera_lepidoptera)
+```
+
+
+### Order comparisons for Species Richness
+
+### Prepare the model data
+```{r}
+# Log transform species richness
+model_data_sr$logSR <- log(model_data_sr$SpeciesRichness + 1)
+
+# Check the distributions
+hist(model_data_sr$SpeciesRichness) ; hist(model_data_sr$logSR) 
+
+
+# Have a look at sample sizes
+table(model_data_sr$Predominant_land_use, model_data_sr$Use_intensity)
+
+# Collapse intense and light land use intensities to have a more even spread of the data
+model_data_sr <- 
+  model_data_sr %>%
+  mutate(
+    Use_intensity = recode_factor(Use_intensity,
+                                  "Intense use" = "High_use",
+                                  "Light use" = "High_use"),
+# reset reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+# Have a look at sample sizes
+table(model_data_sr$Predominant_land_use, model_data_sr$Use_intensity)
+```
+
+## Diptera
+
+# diptera_hymenoptera species richness
+```{r}
+
+# Studies
+dip_hym_ss_sr <-  model_data_sr %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Its the same sets of studies so I don't need to recalculate the studies for species richness data
+cbind(dip_hym_ss_sr, dip_hym_ss) %>% View()
+
+# Model data
+diptera_hymenoptera <- model_data_sr %>% filter(SS %in% dip_hym_ss_sr) %>% filter(Order %in% c("Diptera", "Hymenoptera"))
+
+# maximal model
+dhy_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = diptera_hymenoptera)
+
+# remove block
+dhy_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hymenoptera)
+
+# remove study
+dhy_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_hymenoptera)
+
+# Compare models 
+AIC(dhy_m1, dhy_m2, dhy_m3) # dhy_m2 best model
+
+rm(dhy_m1, dhy_m3)
+
+Anova(dhy_m2)
+
+## Backwards stepwise selection of fixed effects 
+
+## Model with the interaction removed but both predictors still present
+dhy_m4 <- lmer(logSR ~ Predominant_land_use + Higher_taxon + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Just land use as predictor
+dhy_m5 <- lmer(logSR ~ Predominant_land_use + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Just Higher_taxon as the predictor
+dhy_m6 <- lmer(logSR ~ Higher_taxon + (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Make a null, intercept only model
+dhy_m7 <- lmer(logSR ~ (1 | Source_ID) + (1|SS), data = diptera_hymenoptera)
+
+## Compare the models
+AIC(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7)
+model.sel(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7)
+
+# dhy_m2 still the best
+
+# model estimates
+summary(dhy_m2)
+```
+### Simulate diptera_hymenoptera effects
+```{r}
+# Predict Diptera effects
+dip_eff <- predict_this_model(dhy_m2, order = "Diptera")
+
+# relevel model with hymenoptera as reference level
+diptera_hymenoptera <- within(diptera_hymenoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model
+hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hymenoptera)
+
+# Predict hymenoptera effects
+hym_eff <- predict_this_model(hym_m1, order = "Hymenoptera")
+
+# Combine effects and plot them
+diptera_hymenoptera_plot_SR <- combine_and_plot(dip_eff, hym_eff, diversity = "Species_richness")
+
+rm(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7, hym_m1, hym_eff, diptera_hymenoptera, dip_eff)
+```
+
+
+# diptera_coleoptera species richness
+```{r}
+# Model data
+diptera_coleoptera <- model_data_sr %>% filter(SS %in% dip_col_ss) %>% filter(Order %in% c("Diptera", "Coleoptera")) 
+
+# maximal model
+dc_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = diptera_coleoptera)
+
+# remove block
+dc_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_coleoptera)
+
+# remove study
+dc_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_coleoptera)
+
+# Compare models 
+AIC(dc_m1, dc_m2, dc_m3) # dc_m2 best model
+
+rm(dc_m1, dc_m3)
+
+# model estimates
+summary(dc_m2)
+Anova(dc_m2)
+```
+### Simulate diptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(dc_m2, order = "Coleoptera")
+
+# relevel model with Diptera as reference level
+diptera_coleoptera <- within(diptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Diptera"))
+
+# maximal model
+dip_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_coleoptera)
+
+model_plot(dip_m1)
+summary(dip_m1)
+Anova(dip_m1)
+
+# Predict Diptera effects - remember that this overwrites previous effects of Diptera model
+dip_eff <- predict_this_model(dip_m1, order = "Diptera")
+
+# Combine effects and relevel Diptera as reference
+diptera_coleoptera_plot_SR <- combine_and_plot(dip_eff, col_eff, relevel = "Diptera", diversity = "Species_richness")
+
+rm(dip_m1, dc_m2, col_eff, diptera_coleoptera, dip_eff)
+```
+
+# diptera_hemiptera species richness
+```{r}
+
+# Model data
+diptera_hemiptera <- model_data_sr %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) 
+
+# maximal model
+dh_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = diptera_hemiptera)
+
+# remove block
+dh_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_hemiptera)
+
+# remove study
+dh_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_hemiptera)
+
+# Compare models 
+AIC(dh_m1, dh_m2, dh_m3) # dh_m3 best model
+
+rm(dh_m1, dh_m2)
+
+# model estimates
+summary(dh_m3)
+Anova(dh_m3)
+```
+### Simulate diptera_hemiptera effects
+```{r}
+# Predict Diptera effects 
+dip_eff <- predict_this_model(dh_m3, order = "Diptera")
+
+# relevel model with Hemiptera as reference level
+diptera_hemiptera <- within(diptera_hemiptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hemiptera"))
+
+# maximal model with Hemiptera as ref
+hemi_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_hemiptera)
+
+model_plot(hemi_m1)
+summary(hemi_m1)
+Anova(hemi_m1)
+
+# Predict Hemiptera effects 
+hemi_eff <- predict_this_model(hemi_m1, order = "Hemiptera")
+
+# Combine effects and plot
+diptera_hemiptera_plot_SR <- combine_and_plot(dip_eff, hemi_eff, diversity = "Species_richness") 
+
+rm(dip_eff, hemi_eff, hemi_m1, dh_m3, diptera_hemiptera)
+```
+
+# diptera_lepidoptera species richness
+```{r}
+
+# Model data
+diptera_lepidoptera <- model_data_sr %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) 
+
+# maximal model
+dl_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = diptera_lepidoptera)
+
+# remove block
+dl_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = diptera_lepidoptera)
+
+# remove study
+dl_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_lepidoptera)
+
+# Compare models 
+AIC(dl_m1, dl_m2, dl_m3) # dl_m3 best model
+
+rm(dl_m2, dl_m1)
+
+# model estimates
+summary(dl_m3)
+Anova(dl_m3)
+```
+### Simulate diptera_lepidoptera effects
+```{r}
+# Predict Diptera effects 
+dip_eff <- predict_this_model(dl_m3, order = "Diptera")
+
+# relevel model with Lepidoptera as reference level
+diptera_lepidoptera <- within(diptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = diptera_lepidoptera)
+
+model_plot(lep_m1)
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+diptera_lepidoptera_plot_SR <- combine_and_plot(dip_eff, lep_eff, diversity = "Species_richness")
+
+rm(dip_eff, lep_eff, lep_m1, dl_m3, diptera_lepidoptera)
+```
+
+
+## Hymenoptera
+
+# hymenoptera_coleoptera species richness
+```{r}
+# Model data
+hymenoptera_coleoptera <- model_data_sr %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) 
+
+# maximal model
+hc_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = hymenoptera_coleoptera)
+
+# remove block
+hc_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_coleoptera)
+
+# remove study
+hc_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_coleoptera)
+
+# Compare models 
+AIC(hc_m1, hc_m2, hc_m3) # hc_m2 best model
+
+rm(hc_m1, hc_m3)
+
+# model estimates
+summary(hc_m2)
+Anova(hc_m2)
+```
+### Simulate hymenoptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(hc_m2, order = "Coleoptera")
+
+# relevel model with Hymenoptera as reference level
+hymenoptera_coleoptera <- within(hymenoptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model with Hymenoptera as ref
+hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_coleoptera)
+
+model_plot(hym_m1)
+summary(hym_m1)
+Anova(hym_m1)
+
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hym_m1, order = "Hymenoptera")
+
+# Combine effects and plot
+hymenoptera_coleoptera_plot_SR <- combine_and_plot(col_eff, hym_eff, diversity = "Species_richness")
+
+rm(col_eff, hym_eff, hym_m1, hc_m2, hymenoptera_coleoptera)
+```
+
+# hymenoptera_hemiptera species richness
+```{r}
+# Model data
+hymenoptera_hemiptera <- model_data_sr %>% filter(SS %in% hym_hemi_ss) %>% filter(Order %in% c("Hymenoptera", "Hemiptera")) 
+
+# maximal model
+hh_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = hymenoptera_hemiptera)
+
+# remove block
+hh_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_hemiptera)
+
+# remove study
+hh_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_hemiptera)
+
+# Compare models 
+AIC(hh_m1, hh_m2, hh_m3) # hh_m2 best model
+
+rm(hh_m1, hh_m3)
+
+# model estimates
+summary(hh_m2)
+Anova(hh_m2)
+```
+### Simulate hymenoptera_hemiptera effects
+```{r}
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hh_m2, order = "Hemiptera")
+
+# relevel model with Hymenoptera as reference level
+hymenoptera_hemiptera <- within(hymenoptera_hemiptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
+
+# maximal model with Hymenoptera as ref
+hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_hemiptera)
+
+model_plot(hym_m1)
+summary(hym_m1)
+Anova(hym_m1)
+
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hym_m1, order = "Hymenoptera")
+
+# Combine effects and plot
+hymenoptera_hemiptera_plot_SR <- combine_and_plot(hem_eff, hym_eff, diversity = "Species_richness")
+
+rm(hem_eff, hym_eff, hym_m1, hh_m2, hymenoptera_hemiptera)
+```
+
+# hymenoptera_lepidoptera species_richness
+```{r}
+# Model data
+hymenoptera_lepidoptera <- model_data_sr %>% filter(SS %in% hym_lep_ss) %>% filter(Order %in% c("Hymenoptera", "Lepidoptera")) 
+
+# maximal model
+hl_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = hymenoptera_lepidoptera)
+
+# remove block
+hl_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_lepidoptera)
+
+# remove study
+hl_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hymenoptera_lepidoptera)
+
+# Compare models 
+AIC(hl_m1, hl_m2, hl_m3) # hl_m2 best model
+
+rm(hl_m1, hl_m3)
+
+# model estimates
+summary(hl_m2)
+Anova(hl_m2)
+```
+### Simulate hymenoptera_lepidoptera effects
+```{r}
+# Predict Hymenoptera effects 
+hym_eff <- predict_this_model(hl_m2, order = "Hymenoptera")
+
+# relevel model with Lepidoptera as reference level
+hymenoptera_lepidoptera <- within(hymenoptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hymenoptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+hymenoptera_lepidoptera_plot_SR <- combine_and_plot(hym_eff, lep_eff, diversity = "Species_richness")
+
+rm(hym_eff, lep_eff, lep_m1, hl_m2, hymenoptera_lepidoptera)
+```
+
+
+## Hemiptera
+
+# hemiptera_lepidoptera species richness
+```{r}
+# Model data
+hemiptera_lepidoptera <- model_data_sr %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) 
+
+# maximal model
+hl_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = hemiptera_lepidoptera)
+
+# remove block
+hl_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_lepidoptera)
+
+# remove study
+hl_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hemiptera_lepidoptera)
+
+# Compare models 
+AIC(hl_m1, hl_m2, hl_m3) # hl_m3 best model
+
+rm(hl_m2, hl_m1)
+
+# model estimates
+summary(hl_m3)
+Anova(hl_m3)
+```
+### Simulate hemiptera_lepidoptera effects
+```{r}
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hl_m3, order = "Hemiptera")
+
+# relevel model with Lepidoptera as reference level
+hemiptera_lepidoptera <- within(hemiptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hemiptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+hemiptera_lepidoptera_plot_SR <- combine_and_plot(hem_eff, lep_eff, diversity = "Species_richness")
+
+rm(hem_eff, lep_eff, lep_m1, hl_m3, hemiptera_lepidoptera)
+```
+
+# hemiptera_coleoptera species_richness
+```{r}
+# Model data
+hemiptera_coleoptera <- model_data_sr %>% filter(SS %in% hemi_col_ss) %>% filter(Order %in% c("Hemiptera", "Coleoptera")) 
+
+# maximal model
+hc_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSBS),
+              data = hemiptera_coleoptera)
+
+# remove block
+hc_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_coleoptera)
+
+# remove study
+hc_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = hemiptera_coleoptera)
+
+# Compare models 
+AIC(hc_m1, hc_m2, hc_m3) # hc_m2 best model
+
+rm(hc_m1, hc_m3)
+
+# model estimates
+summary(hc_m2)
+Anova(hc_m2)
+```
+### Simulate hemiptera_coleoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(hc_m2, order = "Coleoptera")
+
+# relevel model with Hemiptera as reference level
+hemiptera_coleoptera <- within(hemiptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hemiptera"))
+
+# maximal model with Hemiptera as ref
+hem_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = hemiptera_coleoptera)
+
+summary(hem_m1)
+Anova(hem_m1)
+
+# Predict Hemiptera effects 
+hem_eff <- predict_this_model(hem_m1, order = "Hemiptera")
+
+# Combine effects and plot
+hemiptera_coleoptera_plot_SR <- combine_and_plot(col_eff, hem_eff, diversity = "Species_richness")
+
+rm(hem_eff, col_eff, hem_m1, hc_m2, hemiptera_coleoptera)
+```
+
+
+## Coleoptera
+
+# coleoptera_lepidoptera species richness
+```{r}
+# Model data
+coleoptera_lepidoptera <- model_data_sr %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) 
+
+# maximal model
+cl_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
+              data = coleoptera_lepidoptera)
+
+# remove block
+cl_m2 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = coleoptera_lepidoptera)
+
+# remove study
+cl_m3 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
+    data = coleoptera_lepidoptera)
+
+# Compare models 
+AIC(cl_m1, cl_m2, cl_m3) # cl_m2 best model
+
+rm(cl_m1, cl_m3)
+
+# model estimates
+summary(cl_m2)
+Anova(cl_m2)
+```
+### Simulate coleoptera_lepidoptera effects
+```{r}
+# Predict Coleoptera effects 
+col_eff <- predict_this_model(cl_m2, order = "Coleoptera")
+
+# relevel model with Lepidoptera as reference level
+coleoptera_lepidoptera <- within(coleoptera_lepidoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Lepidoptera"))
+
+# maximal model with Lepidoptera as ref
+lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+    data = coleoptera_lepidoptera)
+
+summary(lep_m1)
+Anova(lep_m1)
+
+# Predict Lepidoptera effects 
+lep_eff <- predict_this_model(lep_m1, order = "Lepidoptera")
+
+# Combine effects and plot
+coleoptera_lepidoptera_plot_SR <- combine_and_plot(col_eff, lep_eff, diversity = "Species_richness")
+
+rm(lep_eff, col_eff, lep_m1, cl_m2, coleoptera_lepidoptera)
+```
+
+# Calculate number of sites for each comparison
+```{r}
+# Sites
+
+# Doesn't matter if we filter model_data_ab or model_data_sr as they are the same dataframe
+
+# dip_hym
+dip_hym_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Diptera", "Hymenoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+
+# dip_col
+dip_col_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Diptera", "Coleoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# dip_hemi
+dip_hemi_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Diptera", "Hemiptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# dip_lep
+dip_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Diptera", "Lepidoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# hym_col
+hym_col_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# hym_hemi
+hym_hemi_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Hymenoptera", "Hemiptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# hym_lep
+hym_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Hymenoptera", "Lepidoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# hemi_col
+hemi_col_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Hemiptera", "Coleoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# hemi_lep
+hemi_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+
+# col_lep
+col_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
+```
+
+
+## GGSAVE
+```{r}
+
+
+dip_col <- ggarrange(diptera_coleoptera_plot_AB, diptera_coleoptera_plot_SR, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+dip_col <- annotate_figure(dip_col, fig.lab = "60 studies; 1009 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/dip_col.pdf", dip_col, height = 7, width = 7)
+
+
+
+dip_hemi <- ggarrange(diptera_hemiptera_plot_AB, diptera_hemiptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+dip_hemi <- annotate_figure(dip_hemi, fig.lab = "49 studies; 849 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/dip_hemi.pdf", dip_hemi, height = 7, width = 7)
+
+
+
+dip_hym <- ggarrange(diptera_hymenoptera_plot_AB, diptera_hymenoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+dip_hym <- annotate_figure(dip_hym, fig.lab = "68 studies; 1118 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/dip_hym.pdf", dip_hym, height = 7, width = 7)
+     
+
+
+dip_lep <- ggarrange(diptera_lepidoptera_plot_AB, diptera_lepidoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+dip_lep <- annotate_figure(dip_lep, fig.lab = "45 studies; 675 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/dip_lep.pdf", dip_lep, height = 7, width = 7)         
+
+
+
+hym_col <- ggarrange(hymenoptera_coleoptera_plot_AB, hymenoptera_coleoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+hym_col <- annotate_figure(hym_col, fig.lab = "67 studies; 1199 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/hym_col.pdf", hym_col, height = 7, width = 7)    
+
+
+
+hym_hemi <- ggarrange(hymenoptera_hemiptera_plot_AB, hymenoptera_hemiptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+hym_hemi <- annotate_figure(hym_hemi, fig.lab = "52 studies; 913 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/hym_hemi.pdf", hym_hemi, height = 7, width = 7)    
+
+
+
+hym_lep <- ggarrange(hymenoptera_lepidoptera_plot_AB, hymenoptera_lepidoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+hym_lep <- annotate_figure(hym_lep, fig.lab = "50 studies; 861 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/hym_lep.pdf", hym_lep, height = 7, width = 7)    
+        
+
+
+hemi_col <- ggarrange(hemiptera_coleoptera_plot_AB, hemiptera_coleoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+hemi_col <- annotate_figure(hemi_col, fig.lab = "57 studies; 1113 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/hemi_col.pdf", hemi_col, height = 7, width = 7)    
+
+
+  
+hemi_lep <- ggarrange(hemiptera_lepidoptera_plot_AB, hemiptera_lepidoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+hemi_lep <- annotate_figure(hemi_lep, fig.lab = "41 studies; 796 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/hemi_lep.pdf", hemi_lep, height = 7, width = 7)  
+
+
+
+col_lep <- ggarrange(coleoptera_lepidoptera_plot_AB, coleoptera_lepidoptera_plot_SR, nrow = 2, common.legend =  TRUE, 
+                      legend = "bottom") 
+col_lep <- annotate_figure(col_lep, fig.lab = "53 studies; 1093 sites", fig.lab.face = "bold.italic", 
+                           fig.lab.pos = "bottom.right", fig.lab.size = 12)
+ggsave("./figures/col_lep.pdf", col_lep, height = 7, width = 7)  
+```
+
+```{r}
+# Filter for studies that only compare hymenoptera and diptera
+dip_hym_ss <-  model_data_ab %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+diptera_hymenoptera <- model_data_sr %>% filter(SS %in% dip_hym_ss) %>% filter(Order %in% c("Hymenoptera", "Diptera")) 
+
+model_data_ab %>% filter(Order == "Hymenoptera") %>% dplyr::select(Family, logAbundance) %>% group_by(Family) %>% summarise(mean = mean(logAbundance)) %>% View()
+
+model_data_ab %>% dplyr::select(Region, Sampling_method, Biome, Higher_taxon, Family) %>% group_by(Region, Sampling_method, Biome, Higher_taxon, Family) %>% tally() %>% View()
+
+a<- diptera_hymenoptera %>% dplyr::select(Order, Family, Predominant_land_use,logSR) %>% group_by(Order, Family, Predominant_land_use) %>% summarise(mean = mean(logSR)) 
+
+diptera_hemiptera %>% dplyr::select(Order, Family, Predominant_land_use, logAbundance) %>% group_by(Order, Family, Predominant_land_use) %>% summarise(mean = mean(logAbundance)) %>% View()
+
+diptera_hymenoptera %>% dplyr::select(Order, Family, Sampling_method, Region) %>% count(Order, Family, Sampling_method, Region) %>% View()
+
+```
+
+### Calculate number of studies and sites for 5/4 order model
+```{r}
+
+# 36 studies, 579 sites that compare all five orders
+five_ss <- model_data_ab %>% dplyr::select(SS, Order) %>% unique() %>% group_by(SS) %>% tally() %>% filter(n == 5) %>% pull(SS) %>% unique()
+all_five <- model_data_ab %>% filter(SS %in% five_ss) 
+five_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 5) %>% pull(SSBS) %>% unique()
+
+# Collapse land use/intensities to have a more even spread of the data
+all_five <- 
+  all_five %>%
+  mutate(
+    Use_intensity = recode_factor(Use_intensity,
+                                  "Intense use" = "High_use",
+                                  "Light use" = "High_use"),
+    Predominant_land_use = recode_factor(Predominant_land_use,
+                                         "Young secondary vegetation" = "Secondary vegetation",
+                                         "Intermediate secondary vegetation" = "Secondary vegetation",
+                                         "Mature secondary vegetation" = "Secondary vegetation"),
+# reset reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# Have a look 
+table(all_five$Predominant_land_use, all_five$Use_intensity) 
+
+# 21 studies, 375 sites that compare 4 orders
+four_ss <- model_data_ab %>% dplyr::select(SS, Order) %>% unique() %>% group_by(SS) %>% tally() %>% filter(n == 4) %>% pull(SS) %>% unique()
+all_four <- model_data_ab %>% filter(SS %in% four_ss) 
+four_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n == 4) %>% pull(SSBS) %>% unique()
+
+# 57 studies and 954 sites that compare >= 4 orders
+fourplus_ss <- model_data_ab %>% dplyr::select(SS, Order) %>% unique() %>% group_by(SS) %>% tally() %>% filter(n >= 4) %>% pull(SS) %>% unique()
+fourplus_studies <- model_data_ab %>% filter(SS %in% fourplus_ss)
+fourplus_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% unique() %>%  group_by(SSBS) %>% 
+  tally() %>% filter(n >= 4) %>% pull(SSBS) %>% unique()
+
+# Collapse land-uses/intensities
+four_plus <- 
+  fourplus_studies %>%
+  mutate(
+    Use_intensity = recode_factor(Use_intensity,
+                                  "Intense use" = "High_use",
+                                  "Light use" = "High_use"),
+    Predominant_land_use = recode_factor(Predominant_land_use,
+                                         "Young secondary vegetation" = "Secondary vegetation",
+                                         "Intermediate secondary vegetation" = "Secondary vegetation",
+                                         "Mature secondary vegetation" = "Secondary vegetation"),
+# reset reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# Spread of the sites
+table(four_plus$Predominant_land_use, four_plus$Use_intensity) 
+
+```
+

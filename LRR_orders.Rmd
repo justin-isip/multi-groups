@@ -1,0 +1,71 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: "2023-03-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Draft table for 3-4 studies looking at LRR (human dominated vs natural) for each order in a given study 
+```{r}
+library(tidyverse)
+library(arm)
+
+
+m1 <- bayesglm(logAbundance ~  Coarse_land_use + SS,
+               family=poisson(link = "log"), data = df)
+
+
+
+
+df <-
+model_data_ab %>% 
+  # Filter for the first four studies in the multi group subset
+  #filter(SS %in% c("AD1_2002__Kruess 1", "AD1_2002__Vazquez 1", "AD1_2007__Ockinger 1", "AD1_2008__Billeter 6")) %>%
+  # Select the variables of interest
+  dplyr::select(SS, Order, Predominant_land_use, logAbundance, Sampling_method, Region) %>% 
+  # Create a new column for the two coarse land-use classes
+  mutate(
+    Coarse_land_use =
+      case_when(
+        Predominant_land_use == "Primary" | Predominant_land_use == "Young secondary vegetation" | Predominant_land_use == "Intermediate secondary vegetation" |
+        Predominant_land_use == "Mature secondary vegetation" ~ "Natural",
+       TRUE ~ "Human_dominated"
+       )) 
+
+model_data_ab %>% 
+  # Filter for the first four studies in the multi group subset
+  #filter(SS %in% c("AD1_2002__Kruess 1", "AD1_2002__Vazquez 1", "AD1_2007__Ockinger 1", "AD1_2008__Billeter 6")) %>%
+  # Select the variables of interest
+  dplyr::select(SS, Order, Predominant_land_use, logAbundance, Sampling_method, Region) %>% 
+  # Create a new column for the two coarse land-use classes
+  mutate(
+    Coarse_land_use =
+      case_when(
+        Predominant_land_use == "Primary" | Predominant_land_use == "Young secondary vegetation" | Predominant_land_use == "Intermediate secondary vegetation" |
+        Predominant_land_use == "Mature secondary vegetation" ~ "Natural",
+       TRUE ~ "Human_dominated"
+       )
+  ) %>% 
+  # Group by the variables of interest
+  group_by(SS, Order, Coarse_land_use) %>%
+  mutate(meanAb = mean(logAbundance)) %>% # Calculate the mean abundance for an order in a given study in a given land use (natural vs human dominated)
+  distinct(Order, Coarse_land_use, meanAb, Sampling_method, Region) %>% # pull distinct rows based on columns of interest
+  pivot_wider(names_from = c(Order,Coarse_land_use), values_from = meanAb) %>% # pivot wider so we have a landscape df, the values are the abundance values
+  group_by(SS) %>% # group by SS and calculate the LRR for each order 
+  mutate(
+    LRR_Col = log(Coleoptera_Human_dominated/Coleoptera_Natural), # does this look right?
+    LRR_Hym = log(Hymenoptera_Human_dominated/Hymenoptera_Natural),
+    LRR_Dip = log(Diptera_Human_dominated/Diptera_Natural),
+    LRR_Lep = log(Lepidoptera_Human_dominated/Lepidoptera_Natural),
+    LRR_Hemi = log(Hemiptera_Human_dominated/Hemiptera_Natural)
+  ) %>%
+  dplyr::select(c("SS", "Region", "Sampling_method"), order(colnames(.))) %>% # reorder columns in alphabetical order, but make SS first column
+  View()
+
+write.csv(model_data_ab,"/Applications/PhD/Projects/multi-groups/model_data_ab.csv")
+```
+
