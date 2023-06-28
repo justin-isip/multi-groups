@@ -1,0 +1,70 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: "2023-04-12"
+output: html_document
+---
+
+```{r}
+library(rotl)
+library(ape)
+library(devtools)
+library(stringr)
+library(tidytree)
+library(tidyverse)
+library(ggtree)
+```
+
+```{r}
+
+
+
+my_taxa <- as.character(new_df$verbatimSpecies)
+
+resolved_names <- rotl::tnrs_match_names(names = my_taxa, context_name = "All life")
+
+resolved_names <- na.omit(resolved_names)
+
+resolved_names <- resolved_names %>% filter(!ott_id %in% c("3126604","ott3063287","ott3063383","ott3104068","ott3106342","ott3120065",
+                                                          "ott3120351","ott3122061","ott3124199","ott3126604", "ott3139517","ott3139624",b
+                                                          "ott4238259","ott679785","ott858539"))
+
+my_ott_id <- rotl::ott_id(resolved_names)
+
+
+my_tree <- rotl::tol_induced_subtree(ott_ids = my_ott_id)
+
+
+ott_id <- rotl::tnrs_match_names("Hesperiidae")$ott_id
+
+amphibia_subtree <- rotl::tol_subtree(ott_id = ott_id)
+
+ape::plot.phylo(amphibia_subtree, cex = 2)
+
+
+my_tree
+
+otl::is_in_tree(resolved_names["Canis",]$ott_id)
+
+ape::plot.phylo(my_tree, cex = 2) # or just plot(my_tree, cex = 2)
+
+resolved_name <- rotl::tnrs_match_names(names = "lepidoptera")
+
+lep_ott_id <- rotl::tnrs_match_names("lepidoptera")$ott_id
+
+id <- tnrs_match_names('Lepidoptera')
+
+x <- rotl::taxonomy_subtree(ott_id = id$ott_id, output_format = 'phylo')
+
+
+sum(my_taxa %in% x$tip.label)
+
+
+my_tree <- rotl::tol_subtree(ott_id = lep_ott_id)
+
+
+tree <- ape::read.tree(file.choose())
+
+
+```
+
