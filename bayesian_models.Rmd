@@ -1,0 +1,295 @@
+---
+title: "SSI_analysis"
+author: "Justin Isip"
+date: "2023-04-07"
+output: html_document
+---
+
+
+## Requires your dataframe to have a column called LU_nvh which has the levels "intact" and "converted". Make sure that intact is the reference level.
+## Alternatively, if you're looking at intensification or another continuous scale, this should be a continuous variable also with the column name LU_nvh.
+
+# Load packages
+```{r}
+library(tidyverse)
+library(arm)
+```
+
+# Subset the df 
+```{r}
+df <-
+  model_data_ab %>% 
+  # Select the variables of interest
+  dplyr::select(SS, SSBS, Order, Predominant_land_use, TotalAbundance, Sampling_method, Region) %>% 
+  # Create a new column for the two coarse land-use classes
+  mutate(
+    LU_nvh =
+      case_when(
+        Predominant_land_use == "Primary" | Predominant_land_use == "Young secondary vegetation" | Predominant_land_use == "Intermediate secondary vegetation" |
+          Predominant_land_use == "Mature secondary vegetation" ~ "intact",
+        TRUE ~ "converted"
+      )) %>%
+      distinct()
+```
+
+# Relevel and factor
+```{r}
+df$LU_nvh <- as.factor(df$LU_nvh)
+df$LU_nvh <- relevel(df$LU_nvh, ref = "intact")
+```
+
+# Models
+```{r}
+# bayesglm(Abundance of order_i in study_j ~ Intact vs converted, family = poisson, data = data[order == i & study == j, ])
+
+
+# First -inf is AD1_2002_Vazquez 1 for hemiptera
+
+hemi_vaz <- df %>% filter(SS == "AD1_2002__Vazquez 1") %>% filter(Order == "Hemiptera")
+m1 <- bayesglm(TotalAbundance ~ LU_nvh, family = poisson(link = "log"), data = hemi_vaz)
+summary(m1)
+
+
+# -inf in AD1_2002_Vazquez 1 for lepidoptera
+
+lep_vaz <- df %>% filter(SS == "AD1_2002__Vazquez 1") %>% filter(Order == "Lepidoptera")
+m2 <- bayesglm(TotalAbundance ~ LU_nvh, family = poisson(link = "log"), data = lep_vaz)
+summary(m2)
+
+
+# inf in DI1_2012__Muchane 1 for lepidoptera
+
+lep_muc <- df %>% filter(SS == "DI1_2012__Muchane 1") %>% filter(Order == "Lepidoptera")
+m3 <- bayesglm(TotalAbundance ~ LU_nvh, family = poisson(link = "log"), data = lep_muc)
+summary(m3)
+
+# -inf in VB1_2008a_Smith 1 for hemiptera
+
+hemi_smith <- df %>% filter(SS == "VB1_2008a_Smith 1") %>% filter(Order == "Hemiptera")
+m4 <- bayesglm(TotalAbundance ~ LU_nvh, family = poisson(link = "log"), data = hemi_smith)
+summary(m4)
+
+
+
+
+
+df %>% filter(SS == "AD1_2002__Vazquez 1") %>% View()
+
+# inf in X for X
+
+X_X <- df %>% filter(SS == "") %>% filter(Order == "")
+m <- bayesglm(TotalAbundance ~ LU_nvh, family = poisson(link = "log"), data = x)
+summary(m)
+
+```
+
+
+# How many models I need to run to calc LRR for all the orders in a given study for my whole df
+```{r}
+# 146 models to run for the whole table
+sum(!is.na(a$LRR_Col)) # 36
+sum(!is.na(a$LRR_Dip)) # 26
+sum(!is.na(a$LRR_Hemi)) # 26
+sum(!is.na(a$LRR_Hym)) # 33
+sum(!is.na(a$LRR_Lep)) # 25
+```
+
+# Dispersion test function
+```{r}
+dispersiontest <- function(object, trafo = NULL, alternative = c("greater", "two.sided", "less"))
+{
+  if(!inherits(object, "glm") || family(object)$family != "poisson")
+    stop("only Poisson GLMs can be tested")
+  alternative <- match.arg(alternative)
+  otrafo <- trafo
+  if(is.numeric(otrafo)) trafo <- function(x) x^otrafo
+  
+  y <- if(is.null(object$y)) model.response(model.frame(object)) else object$y
+  yhat <- fitted(object)
+  aux <- ((y - yhat)^2 - y)/yhat
+  
+  if(is.null(trafo)) {
+    STAT <- sqrt(length(aux)) * mean(aux)/sd(aux)
+    NVAL <- c(dispersion = 1)
+    EST <- c(dispersion = mean(aux) + 1)    
+  } else {
+    auxreg <- lm(aux ~ 0 + I(trafo(yhat)/yhat))
+    STAT <- as.vector(summary(auxreg)$coef[1,3])
+    NVAL <- c(alpha = 0)
+    EST <- c(alpha = as.vector(coef(auxreg)[1]))
+  }
+  
+  rval <- list(statistic = c(z = STAT),
+               p.value = switch(alternative,
+                                "greater" = pnorm(STAT, lower.tail = FALSE),
+                                "two.sided" = pnorm(abs(STAT), lower.tail = FALSE)*2,
+                                "less" = pnorm(STAT)),
+               estimate = EST,
+               null.value = NVAL,
+               alternative = alternative,
+               method = switch(alternative,
+                               "greater" = "Overdispersion test",
+                               "two.sided" = "Dispersion test",
+                               "less" = "Underdispersion test"),
+               data.name = deparse(substitute(object)))
+  class(rval) <- "htest"
+  return(rval)
+}
+```
+
+
+# SSI calc function
+```{r}
+SSI_calc<-function(data, fac = TRUE, type = "abundance", remove_uncertain = TRUE){
+  
+  ## function to extract (and back-transform) estimates from the model output
+  get_estimates<-function(m){
+      fam<-m$family$family
+      if(fam=="poisson"|fam=="quasipoisson"){
+        transform_fun<-exp
+      }else{
+        transform_fun<-inv.logit
+      }
+      
+      intercept<-coef(m)[1]
+      estimate<-coef(m)[2]
+      exp_estimate<-transform_fun(coef(m)[2])
+      exp_intercept<-transform_fun(coef(m)[1])
+      se <- summary(m)$coefficients[2,2]
+      ci <- transform_fun(c(coef(m)[2]-1.96*se, coef(m)[2]+1.96*se))
+    return(list("intercept"=intercept,"estimate"=estimate,"exp_estimate" = exp_estimate,"exp_intercept" = exp_intercept,"se"= se, "ci" = ci))
+  } 
+  
+  require(arm)
+  require(boot)
+  require(AER)
+  
+  data$present<-data$Measurement>0 ## add in a binary value for species presence at a site
+  
+  if(type=="abundance-present"){
+    data<-data[data$present=="TRUE",] # only use data where the species is present
+  }
+  
+  uncert<-sum(data$Resolution_entered=="Uncertain")
+  if(remove_uncertain ==TRUE){
+    data<-data[data$Resolution_entered!="Uncertain",] # remove species with uncertain taxa name
+    print(paste("removing",uncert, "rows with uncertain taxa name"))
+  }else{
+    print(paste("Warning:", uncert, "rows with uncertain taxa name")) ## otherwise warn that they're still in there
+  }
+  
+  if(type%in%c("abundance","abundance-present")){
+    occ<-sum(data$Diversity_metric_type!="Abundance") ## how many rows are not abundance measurements?
+    print(paste("removing", occ, "rows with non-abundance data")) ## warn that they're being removed
+    data<-data[data$Diversity_metric_type=="Abundance",] # only use abundance measurements
+  }
+  
+  data<-droplevels(data)
+  ##Check that you have enough data for each species
+  
+  speciestable<-as.data.frame.table(tapply(data$LU_nvh, data$Best_guess_binomial, function(x)length(unique(x))))
+  sprem<-sum(speciestable$Freq<2)
+  
+  species<-speciestable$Var1[speciestable$Freq>1]
+  print(paste("removing",sprem, "species without data from intact and converted sites"))
+  
+  
+  
+  if(fac == TRUE){ # set up the dataframes for output
+    species.coef<-as.data.frame(matrix(NA,nrow = length(species),ncol = 27, dimnames = list(c(),c("Species", "Genus","Family","COLTAXON","err_family","ranefs","intercept","est","exp_est","exp_intercept","se","lower","upper","significance","Sources","Studies","Sites","meanIntact","meanConverted","subAbund","newsubAbund","Sites_intact","Sites_converted","Sites_intact_zero","Sites_converted_zero","Perc_intact_sites_zero","Perc_converted_sites_zero"))))
+  }else{
+    species.coef<-as.data.frame(matrix(NA,nrow = length(species),ncol = 30, dimnames = list(c(),c("Species", "Genus","Family","COLTAXON","err_family","ranefs","intercept","est","exp_est","exp_intercept","se","lower","upper","significance","Sources","Studies","Sites","meanMinimal","meanLight","meanIntense","subAbund","Sites_minimal","Sites_light","Sites_intense","Sites_minimal_zero","Sites_light_zero","Sites_intense_zero","Perc_minimal_sites_zero","Perc_light_sites_zero","Perc_intense_sites_zero"))))
+  }
+    
+  for(i in 1:length(species)){
+    print(i)
+    dat.i<-data[data$Best_guess_binomial==species[i],] # subset to the correct species
+    dat.i<-droplevels(dat.i)
+
+    species.coef$subAbund[i] <- sum(dat.i$Measurement)
+    
+    # get the easy data out
+    species.coef$Species[i]<-paste(species[i])
+    species.coef$Family[i]<-paste(dat.i$Family[1])
+    species.coef$COLTAXON[i]<-paste(dat.i$Taxon[1])
+    species.coef$Genus[i]<-paste(strsplit(as.character(species[i]),"_")[[1]][1])
+    species.coef$Sources[i] <- length(unique(dat.i$Source_ID))
+    species.coef$Studies[i] <- length(unique(dat.i$Study_name))
+    species.coef$Sites[i] <- nrow(dat.i)
+    
+    
+    if(fac == TRUE){
+      species.coef$meanIntact[i] <- mean(dat.i$Measurement[dat.i$LU_nvh=="intact"])
+      species.coef$meanConverted[i] <- mean(dat.i$Measurement[dat.i$LU_nvh=="converted"])
+      species.coef$Sites_intact[i] <- sum(dat.i$LU_nvh=="intact")
+      species.coef$Sites_converted[i] <- sum(dat.i$LU_nvh=="converted")
+      species.coef$Sites_intact_zero[i]<-nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh=="intact",])
+      species.coef$Sites_converted_zero[i]<-nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh=="converted",])
+      species.coef$Perc_intact_sites_zero[i]<-(nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh=="intact",])/sum(dat.i$LU_nvh=="intact"))*100
+      species.coef$Perc_converted_sites_zero[i]<-(nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh=="converted",])/sum(dat.i$LU_nvh=="converted"))*100
+    }else{
+      species.coef$meanMinimal[i] <- sum(dat.i$Measurement[dat.i$LU_nvh==1])/sum(dat.i$LU_nvh==1)
+      species.coef$meanLight[i] <- sum(dat.i$Measurement[dat.i$LU_nvh%in%2:3])/sum(dat.i$LU_nvh==2)
+      species.coef$meanIntense[i] <- sum(dat.i$Measurement[dat.i$LU_nvh%in%2:3])/sum(dat.i$LU_nvh==3)
+      species.coef$Sites_minimal[i] <- sum(dat.i$Measurement[dat.i$LU_nvh==1])
+      species.coef$Sites_light[i] <- sum(dat.i$Measurement[dat.i$LU_nvh==2])
+      species.coef$Sites_intense[i] <- sum(dat.i$Measurement[dat.i$LU_nvh==3])
+      species.coef$Sites_minimal_zero[i]<- nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==1,])
+      species.coef$Sites_light_zero[i]<- nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==2,])
+      species.coef$Sites_intense_zero[i]<- nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==3,])
+      species.coef$Perc_minimal_sites_zero[i]<- (nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==1,])/sum(dat.i$LU_nvh==1))*100
+      species.coef$Perc_light_sites_zero[i]<- (nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==2,])/sum(dat.i$LU_nvh==2))*100
+      species.coef$Perc_intense_sites_zero[i]<- (nrow(dat.i[dat.i$Measurement==0&dat.i$LU_nvh==3,])/sum(dat.i$LU_nvh==3))*100
+      
+    }
+    
+    # do the models and get the estimates
+    if(type%in%c("abundance","abundance-present")){      
+      species.coef$newsubAbund[i] <- sum(dat.i$Measurement)
+      
+      if(length(unique(dat.i$SS))>1){ # if there's more than one study
+        m<-bayesglm(Measurement~LU_nvh+SS, family = poisson(link="log"),data = dat.i)
+        if(dispersiontest(m)$p.value<0.05){ # if the model is overdispersed, fit a quasipoisson model
+          m<-bayesglm(Measurement~LU_nvh+SS, family = quasipoisson(link="log"),data = dat.i)
+        }
+      }else{
+        m<-bayesglm(Measurement~LU_nvh, family =  poisson(link="log"),data = dat.i)
+        if(dispersiontest(m)$p.value<0.05){
+          m<-bayesglm(Measurement~LU_nvh, family = quasipoisson(link="log"),data = dat.i)
+        }
+      }
+    }
+    
+    if(type=="occurrence"){
+      species.coef$newsubAbund[i] <- NA
+      if(length(unique(dat.i$SS))>1){ # if there's more than one study
+        m<-bayesglm(present~LU_nvh+SS, family = binomial(link = "logit"),data = dat.i)
+        if(dispersiontest(m)$p.value<0.05){ # if the model is overdispersed, fit a quasibinomial model
+          m<-bayesglm(present~LU_nvh+SS, family = quasibinomial(link = "logit"),data = dat.i)
+        }
+      }else{
+        m<-bayesglm(present~LU_nvh, family = binomial(link = "logit"),data = dat.i)
+        if(dispersiontest(m)$p.value<0.05){
+          m<-bayesglm(present~LU_nvh, family = quasibinomial(link = "logit"),data = dat.i)
+        }
+      }
+    } # use this otherwise predicted probabilities of 0 and 1 become a major problem
+    
+    ranef.form<-"none" ## relic from when I was trying it out with random effects as well
+    species.coef$ranefs[i]<-ranef.form
+    species.coef$significance[i]<-summary(m)$coefficients[2,4] # slope significance
+    ests<-get_estimates(m)
+    species.coef$intercept[i]<-ests$intercept
+    species.coef$est[i]<-ests$estimate
+    species.coef$exp_est[i] <- ests$exp_estimate
+    species.coef$exp_intercept[i] <- ests$exp_intercept
+    species.coef$se[i] <- ests$se
+    species.coef$lower[i] <- ests$ci[1]
+    species.coef$upper[i]<-ests$ci[2]
+    species.coef$err_family[i]<-m$family$family
+    
+  }
+  return(species.coef)
+}
+```
+
