@@ -5,54 +5,30 @@ date: "2023-03-29"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ## Draft table for 3-4 studies looking at LRR (human dominated vs natural) for each order in a given study 
 ```{r}
 library(tidyverse)
 library(arm)
+library(gt)
 
-
-m1 <- bayesglm(logAbundance ~  Coarse_land_use + SS,
-               family=poisson(link = "log"), data = df)
-
-
-
-
-df <-
-model_data_ab %>% 
+LRR <-
+  model_data_ab %>% 
   # Filter for the first four studies in the multi group subset
   #filter(SS %in% c("AD1_2002__Kruess 1", "AD1_2002__Vazquez 1", "AD1_2007__Ockinger 1", "AD1_2008__Billeter 6")) %>%
   # Select the variables of interest
-  dplyr::select(SS, Order, Predominant_land_use, logAbundance, Sampling_method, Region) %>% 
+  dplyr::select(SS, Order, Predominant_land_use, TotalAbundance, Sampling_method, Region) %>% 
   # Create a new column for the two coarse land-use classes
   mutate(
     Coarse_land_use =
       case_when(
         Predominant_land_use == "Primary" | Predominant_land_use == "Young secondary vegetation" | Predominant_land_use == "Intermediate secondary vegetation" |
-        Predominant_land_use == "Mature secondary vegetation" ~ "Natural",
-       TRUE ~ "Human_dominated"
-       )) 
-
-model_data_ab %>% 
-  # Filter for the first four studies in the multi group subset
-  #filter(SS %in% c("AD1_2002__Kruess 1", "AD1_2002__Vazquez 1", "AD1_2007__Ockinger 1", "AD1_2008__Billeter 6")) %>%
-  # Select the variables of interest
-  dplyr::select(SS, Order, Predominant_land_use, logAbundance, Sampling_method, Region) %>% 
-  # Create a new column for the two coarse land-use classes
-  mutate(
-    Coarse_land_use =
-      case_when(
-        Predominant_land_use == "Primary" | Predominant_land_use == "Young secondary vegetation" | Predominant_land_use == "Intermediate secondary vegetation" |
-        Predominant_land_use == "Mature secondary vegetation" ~ "Natural",
-       TRUE ~ "Human_dominated"
-       )
+          Predominant_land_use == "Mature secondary vegetation" ~ "Natural",
+        TRUE ~ "Human_dominated"
+      )
   ) %>% 
   # Group by the variables of interest
   group_by(SS, Order, Coarse_land_use) %>%
-  mutate(meanAb = mean(logAbundance)) %>% # Calculate the mean abundance for an order in a given study in a given land use (natural vs human dominated)
+  mutate(meanAb = mean(TotalAbundance)) %>% # Calculate the mean abundance for an order in a given study in a given land use (natural vs human dominated)
   distinct(Order, Coarse_land_use, meanAb, Sampling_method, Region) %>% # pull distinct rows based on columns of interest
   pivot_wider(names_from = c(Order,Coarse_land_use), values_from = meanAb) %>% # pivot wider so we have a landscape df, the values are the abundance values
   group_by(SS) %>% # group by SS and calculate the LRR for each order 
@@ -64,8 +40,68 @@ model_data_ab %>%
     LRR_Hemi = log(Hemiptera_Human_dominated/Hemiptera_Natural)
   ) %>%
   dplyr::select(c("SS", "Region", "Sampling_method"), order(colnames(.))) %>% # reorder columns in alphabetical order, but make SS first column
-  View()
+  ungroup()
 
-write.csv(model_data_ab,"/Applications/PhD/Projects/multi-groups/model_data_ab.csv")
+LRR$SS <- as.factor(LRR$SS)
+
+LRR %>% 
+  mutate_if(is.numeric, round, digits = 2) %>%
+  arrange(LRR_Col) %>%
+  gt() %>%
+  sub_missing(columns = everything(), rows = everything(), missing_text = "--") %>%
+  tab_spanner(label = "Coleoptera",
+              columns = c(Coleoptera_Human_dominated, Coleoptera_Natural), id = "col") %>%
+  tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "col")) %>%
+  tab_spanner(label = "Diptera",
+              columns = c(Diptera_Human_dominated, Diptera_Natural), id = "dip") %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "dip")) %>%
+    tab_spanner(label = "Hymenoptera",
+              columns = c(Hymenoptera_Human_dominated, Hymenoptera_Natural), id = "hym") %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "hym")) %>%
+      tab_spanner(label = "Hemiptera",
+              columns = c(Hemiptera_Human_dominated, Hemiptera_Natural), id = "hemi") %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "hemi")) %>%
+        tab_spanner(label = "Lepidoptera",
+              columns = c(Lepidoptera_Human_dominated, Lepidoptera_Natural), id = "lep") %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "lep")) %>%
+          tab_spanner(label = "Log Response Ratio",
+              columns = c(LRR_Col, LRR_Dip, LRR_Hemi, LRR_Hym, LRR_Lep), id = "lrr") %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_spanners(spanners = "lrr")) %>%
+  cols_label(
+    SS = "Study",
+    Sampling_method = "Sampling method",
+    Coleoptera_Human_dominated = "Converted",
+    Coleoptera_Natural = "Intact",
+    Diptera_Human_dominated = "Converted",
+    Diptera_Natural = "Intact",
+    Hymenoptera_Human_dominated = "Converted",
+    Hymenoptera_Natural = "Intact",
+    Hemiptera_Human_dominated = "Converted",
+    Hemiptera_Natural = "Intact",
+    Lepidoptera_Human_dominated = "Converted",
+    Lepidoptera_Natural = "Intact",
+    LRR_Col = "Coleoptera",
+    LRR_Dip = "Diptera",
+    LRR_Hemi = "Hemiptera",
+    LRR_Hym = "Hymenoptera",
+    LRR_Lep = "Lepidoptera") %>%
+  data_color(columns = c(LRR_Col, LRR_Dip, LRR_Hemi, LRR_Hym, LRR_Lep), colors = scales::col_numeric( palette = c("#FF0000", "#FF2424" ,"#FF4848" ,"#FF6D6D" ,"#FF9191", "#FFB6B6", "#FFDADA", "#FFFFFF", "#DADAFF", "#B6B6FF", "#2424FF", "#0000FF"),domain = range(- 5, 3), na.color = "transparent")) 
+  
+  #  tab_style(
+  #  style = list(cell_fill(color = "blue")), locations = cells_body(columns = LRR_Col, rows = LRR_Col >= 0.01)) %>%
+  #  tab_style(style = list(cell_fill(color = "red")), locations = cells_body(columns = LRR_Col, rows = LRR_Col <= -0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "blue")), locations = cells_body(columns = LRR_Dip, rows = LRR_Dip >= 0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "red")), locations = cells_body(columns = LRR_Dip, rows = LRR_Dip <= -0.01))  %>%
+  #  tab_style(style = list(cell_text(color = "blue")), locations = cells_body(columns = LRR_Hemi,rows = LRR_Hemi >= 0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "red")), locations = cells_body(columns = LRR_Hemi,rows = LRR_Hemi <= -0.01)) %>% 
+  #  tab_style(style = list(cell_text(color = "blue")), locations = cells_body(columns = LRR_Hym,rows = LRR_Hym >= 0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "red")), locations = cells_body(columns = LRR_Hym,rows = LRR_Hym <= -0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "blue")), locations = cells_body(columns = LRR_Lep,rows = LRR_Lep >= 0.01)) %>%
+  #  tab_style(style = list(cell_text(color = "red")), locations = cells_body(columns = LRR_Lep,rows = LRR_Lep <= -0.01)) 
+    
+colfunc <- colorRampPalette(c("red", "white", "blue"))
+colfunc(20)
+
+
 ```
 
