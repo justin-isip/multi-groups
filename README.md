@@ -2,6 +2,8 @@
 
 Author(s): [Justin E Isip](mailto:j.isip@nhm.ac.uk) and [Andy Purvis](mailto:andy.purvis.@nhm.ac.uk).
 
+![alt text](https://github.com/justin-isip/multi-groups/blob/main/figures/updated_figures/col_lep.png)
+
 This repository is an attempt to develop my skills in version control for one of the potential chapters in my PhD (which is ongoing) - wish me luck!
 
 ## Data
