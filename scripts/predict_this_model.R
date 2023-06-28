@@ -1,5 +1,5 @@
 # Function for predicting abundance or species richness percentage differences
-# From baseline of primary veg based on model predictions
+# From baseline of primary veg based on model coefficients
 
 predict_this_model <- function(model, order) {
   
