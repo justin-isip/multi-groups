@@ -1,0 +1,76 @@
+---
+title: "sampling analysis"
+author: "Justin Isip"
+date: '2023-06-28'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+length(unique(model_data_ab$SS))
+
+# Variables of interest
+ss <- model_data_ab %>% dplyr::select(SS, Sampling_method, Region, Biome, Order) %>% distinct(.keep_all = TRUE)
+
+
+coleoptera <- model_data_ab %>% dplyr::select(SS, Sampling_method, Region, Biome, Order, Predominant_land_use) %>% filter(Order == "Coleoptera") %>%
+  distinct()
+
+# Coarsen methods
+reduced_sampling <- 
+              ss %>%
+# Remove vague sampling methods
+    filter(Sampling_method != "multiple", Sampling_method != "various") %>%
+# Combine baited and non baited pitfall traps
+mutate(Sampling_method = recode_factor(Sampling_method,
+                                       "baited pit-fall traps" = "Baited and non baited pit-fall traps",
+                                       "pit-fall traps" = "Baited and non baited pit-fall traps",
+                                      # Combine sweep net and sweep netting
+                                      "sweep_netting" = "sweep net",
+                                      # Combine soil cores and soil cores along transect
+                                      "soil core" = "soil core sampling",
+                                      "soil cores along transects" = "soil core sampling"
+                                      ))
+
+
+# Do I want to get rid of mixed traps too?
+
+sm <- reduced_sampling %>% group_by(Order) %>% count(Sampling_method) %>% arrange(desc(n))
+
+
+biome <- reduced_sampling %>% group_by(Order) %>% count(Biome) %>% arrange(desc(n))
+
+# Look at distribution of sampling methods per order
+ggplot(sm, aes(x = Sampling_method, y = n)) +
+  geom_bar(stat ="identity", fill = "forest green") +
+  facet_wrap(~reorder(Order, n), ncol = 1) + 
+  theme(axis.text.x = element_text(angle=45, vjust = 0.5, hjust = 0.5))
+
+# Coarsen biomes into tropical/subtropical vs non-tropical
+reduced_biomes <- 
+  ss %>%
+  mutate(Biome = recode_factor(Biome,
+                               "Temperate Broadleaf & Mixed Forests" = "non tropical",
+                               "Tropical & Subtropical Moist Broadleaf Forests" = "tropical",
+                               "Tropical & Subtropical Grasslands, Savannas & Shrublands" = "tropical",
+                               "Temperate Grasslands, Savannas & Shrublands" = "non tropical",
+                               "Temperate Conifer Forests" = "non tropical",
+                               "Montane Grasslands & Shrublands" = "non tropical",
+                               "Tropical & Subtropical Dry Broadleaf Forests" = "tropical",
+                               "Mediterranean Forests, Woodlands & Scrub" = "non tropical",
+                               "Deserts & Xeric Shrublands" = "tropical",
+                               "Flooded Grasslands & Savannas" = "tropical"
+                               ))
+
+  
+tropical_vs_nontropical <- reduced_biomes %>% group_by(Order) %>% count(Biome) %>% arrange(desc(n))
+reg <- reduced_sampling %>% group_by(Order) %>% count(Region) %>% arrange(desc(n))
+
+
+
+```
