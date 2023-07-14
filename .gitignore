@@ -28,10 +28,4 @@ vignettes/*.pdf
 .Renviron
 # desktop service files
 .DS_Store
-# data folder
-data/
-# figures folder
-figures/
 .RDataTmp2
-.RDataTmp4
-.RDataTmp6
