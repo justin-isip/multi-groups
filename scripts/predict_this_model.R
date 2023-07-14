@@ -1,7 +1,7 @@
 # Function for predicting abundance or species richness percentage differences
 # From baseline of primary veg based on model coefficients
 
-predict_this_model <- function(model, order) {
+predict_this_model <- function(model, order, percentage_diff, baseline) {
   
   # gather the effects and confidence intervals using simulation. Simulate 1000 times
   effects <- FEsim(model, n.sims = 1000)
@@ -29,21 +29,45 @@ predict_this_model <- function(model, order) {
     mutate(Upper_ci = (median + 1.96*sd)) %>%
     mutate(Lower_ci = (median - 1.96*sd))
   
-  # Back transform the log abundance/species richness estimates
-  effects <- effects %>%
-    mutate(
-      Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
-    mutate(
-      Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
-    mutate(
-      Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+
+  # if I don't supply percentage_diff as an argument then do nothing
+  if(missing(percentage_diff)) {
+    NULL
+  }
   
+  else {
+    
+    if(percentage_diff == "YES") {
+      effects <- effects %>%
+        mutate(
+          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
+        mutate(
+          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
+        mutate(
+          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+    }}
+
   
-  # Shift the baseline down to 0
-  effects[1,7] <- 0 #shift median
-  effects[1,8] <- 0 #shift upper
-  effects[1,9] <- 0 #shift lower 
+  if(missing(baseline)) {
+    NULL
+  }
   
+  else {
+    
+    if(baseline == "median"){
+      # Shift the baseline down to 0
+      effects[1,3] <- 0 #shift median
+      effects[1,5] <- 0 #shift upper
+      effects[1,6] <- 0 #shift lower 
+    }
+    if(baseline == "percentage"){
+      # Shift the baseline down to 0 - this is only for when the percentage difference has been calculated
+      effects[1,7] <- 0 #shift median
+      effects[1,8] <- 0 #shift upper
+      effects[1,9] <- 0 #shift lower 
+    }}
+
+
   # Rename the sim eff term column name for joining
   colnames(effects)[1] <- "Predominant_land_use"
   
