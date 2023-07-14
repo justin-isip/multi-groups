@@ -364,7 +364,7 @@ model_data_sr <- drop_na(five_orders,
 # sum(model_data_ab$RescaledAbundance == 1)
 
 # Check the distributions
-hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logRescaledAbundance) ; hist(model_data_ab$logAbundance) ; hist(model_data_ab$sqrtRescaledAbundance)
+hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance) ; hist(model_data_ab$sqrtRescaledAbundance)
 
 plot(density(model_data_ab$logRescaledAbundance)) ; plot(density(model_data_ab$logAbundance)) 
 
