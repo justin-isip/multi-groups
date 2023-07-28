@@ -5,6 +5,8 @@ date: "2023-03-07"
 output: html_document
 ---
 
+# This Rmd runs the models and the subsequent figures for each of the pairwise comparisons (10 for abundance, 10 for species richness) between the five orders (Coleoptera, Diptera, Hymenoptera, Hemiptera and Lepidoptera).
+
 ### Clear the workspace
 ```{r}
 rm(list=ls())
@@ -241,6 +243,7 @@ source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
 ### Read in the data
 ```{r}
 diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
+
 ```
 
 ### Correct for sampling effort
@@ -366,7 +369,7 @@ model_data_sr <- drop_na(five_orders,
 # Check the distributions
 hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance) ; hist(model_data_ab$sqrtRescaledAbundance)
 
-plot(density(model_data_ab$logRescaledAbundance)) ; plot(density(model_data_ab$logAbundance)) 
+plot(density(model_data_ab$logAbundance)) 
 
 # Have a look at sample sizes
 table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
@@ -387,6 +390,57 @@ model_data_ab <-
 # Have a look at sample sizes
 table(model_data_ab$Predominant_land_use, model_data_ab$Use_intensity)
 ```
+
+
+# Calculate stats template
+```{r}
+# Extract f ratio, df and p value
+anova(x)
+
+# Check residuals
+hist(residuals(x))
+
+# Check r2
+r.squaredGLMM(x)
+
+# Extract correlation coefficients
+corr <- as.matrix(summary(x)$coefficients)
+
+# Split the coefficients into two groups
+x <- corr[2:8, 1] 
+x <- corr[10:nrow(corr), 1] 
+
+plot(x, x)
+cor(x, x)
+
+rm(col_eff, corr, dc_m2, dc_m4, dc_m5, dc_m6, dc_m7, dip_eff, dip_m2, coleoptera, diptera, diptera_coleoptera)
+
+```
+
+# Model template
+```{r}
+## Backwards stepwise selection of fixed effects 
+
+## Model with the interaction removed but both predictors still present
+x_m4 <- lmer(logSR ~ Predominant_land_use + Higher_taxon + (1 | Source_ID) + (1|SS), data = x_m)
+
+## Just land use as predictor
+x_m5 <- lmer(logSR ~ Predominant_land_use + (1 | Source_ID) + (1|SS), data = x_m)
+
+## Just Higher_taxon as the predictor
+x_m6 <- lmer(logSR ~ Higher_taxon + (1 | Source_ID) + (1|SS), data = x_m)
+
+## Make a null, intercept only model
+x_m7 <- lmer(logSR ~ (1 | Source_ID) + (1|SS), data = x_m)
+
+## Compare the models
+AIC(x_m, x_m4, x_m5, x_m6, x_m7)
+model.sel(x_m, x_m5, x_m5, x_m6, x_m7)
+
+# x still optimal
+
+```
+
 
 ### Order comparisons for abundance
 
@@ -608,54 +662,6 @@ rm(col_eff, corr, dc_m2, dc_m4, dc_m5, dc_m6, dc_m7, dip_eff, dip_m2, coleoptera
 
 ```
 
-# Calculate stats template
-```{r}
-# Extract f ratio, df and p value
-anova(x)
-
-# Check residuals
-hist(residuals(x))
-
-# Check r2
-r.squaredGLMM(x)
-
-# Extract correlation coefficients
-corr <- as.matrix(summary(x)$coefficients)
-
-# Split the coefficients into two groups
-x <- corr[2:8, 1] 
-x <- corr[10:nrow(corr), 1] 
-
-plot(x, x)
-cor(x, x)
-
-rm(col_eff, corr, dc_m2, dc_m4, dc_m5, dc_m6, dc_m7, dip_eff, dip_m2, coleoptera, diptera, diptera_coleoptera)
-
-```
-
-# Model template
-```{r}
-## Backwards stepwise selection of fixed effects 
-
-## Model with the interaction removed but both predictors still present
-x_m4 <- lmer(logSR ~ Predominant_land_use + Higher_taxon + (1 | Source_ID) + (1|SS), data = x_m)
-
-## Just land use as predictor
-x_m5 <- lmer(logSR ~ Predominant_land_use + (1 | Source_ID) + (1|SS), data = x_m)
-
-## Just Higher_taxon as the predictor
-x_m6 <- lmer(logSR ~ Higher_taxon + (1 | Source_ID) + (1|SS), data = x_m)
-
-## Make a null, intercept only model
-x_m7 <- lmer(logSR ~ (1 | Source_ID) + (1|SS), data = x_m)
-
-## Compare the models
-AIC(x_m, x_m4, x_m5, x_m6, x_m7)
-model.sel(x_m, x_m5, x_m5, x_m6, x_m7)
-
-# x still optimal
-
-```
 
 
 # diptera_hemiptera abundance
