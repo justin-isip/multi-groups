@@ -1,7 +1,7 @@
 # Function for predicting abundance or species richness percentage differences
 # From baseline of primary veg based on model coefficients
 
-predict_this_model <- function(model, order, percentage_diff, baseline) {
+predict_this_model <- function(model, order, percentage_diff, baseline, add_primary) {
   
   # gather the effects and confidence intervals using simulation. Simulate 1000 times
   effects <- FEsim(model, n.sims = 1000)
@@ -29,6 +29,24 @@ predict_this_model <- function(model, order, percentage_diff, baseline) {
     mutate(Upper_ci = (median + 1.96*sd)) %>%
     mutate(Lower_ci = (median - 1.96*sd))
   
+  if(missing(add_primary)){
+    NULL
+  }
+  
+  else {
+    
+    if(add_primary == "YES") {
+      
+      values <- effects[1,c(3,5:6)]
+      
+      columns_to_add <- c(3,5:6)
+      
+      for(i in 2:nrow(effects)) {
+        effects[i,][columns_to_add] <- effects[i,][columns_to_add] + values
+        
+      }
+    }}
+  
 
   # if I don't supply percentage_diff as an argument then do nothing
   if(missing(percentage_diff)) {
@@ -36,7 +54,7 @@ predict_this_model <- function(model, order, percentage_diff, baseline) {
   }
   
   else {
-    
+    # This calculates the percentage difference based on each of the coefficients relative to primary
     if(percentage_diff == "YES") {
       effects <- effects %>%
         mutate(
@@ -55,18 +73,19 @@ predict_this_model <- function(model, order, percentage_diff, baseline) {
   else {
     
     if(baseline == "median"){
-      # Shift the baseline down to 0
+      # Use this when you've set primary to zero but are looking on the raw/absolute values scale in log space
       effects[1,3] <- 0 #shift median
       effects[1,5] <- 0 #shift upper
       effects[1,6] <- 0 #shift lower 
     }
     if(baseline == "percentage"){
-      # Shift the baseline down to 0 - this is only for when the percentage difference has been calculated
+      # Use this when you've not set primary to zero and are looking on the percentage difference scale
       effects[1,7] <- 0 #shift median
       effects[1,8] <- 0 #shift upper
       effects[1,9] <- 0 #shift lower 
     }}
-
+ 
+  
 
   # Rename the sim eff term column name for joining
   colnames(effects)[1] <- "Predominant_land_use"
