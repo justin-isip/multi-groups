@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 length(unique(model_data_ab$SS))
 
 # Variables of interest
-ss <- model_data_ab %>% dplyr::select(SS, Sampling_method, Region, Biome, Order) %>% distinct(.keep_all = TRUE)
+ss <- model_data_ab %>% dplyr::select(Source_ID, SS, Sampling_method, Region, Biome, Order) %>% distinct(.keep_all = TRUE)
 
 
 coleoptera <- model_data_ab %>% dplyr::select(SS, Sampling_method, Region, Biome, Order, Predominant_land_use) %>% filter(Order == "Coleoptera") %>%
