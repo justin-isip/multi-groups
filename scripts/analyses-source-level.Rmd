@@ -243,7 +243,7 @@ source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
 
 ### Read in the data
 ```{r}
-diversity <- readRDS("./data/diversity-2022-04-13-02-33-10.rds")
+diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
 ```
 
 ### Correct for sampling effort
@@ -263,7 +263,7 @@ merged <- merge_sites(diversity, verbose = TRUE)
 # Calculating multiple groups
 ```{r}
 
-# At the source level
+# Subset multiple orders at the source level
 source_multiple <- merged %>% 
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
   group_by(Source_ID) %>%  
@@ -275,7 +275,7 @@ source_multiple <- merged %>%
   filter(Multiple_groups == "YES") %>% 
   droplevels()
 
-# At the study level
+# Subset multiple orders at the study level
 ss_multiple <- merged %>% 
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
   group_by(SS) %>%  
@@ -287,26 +287,38 @@ ss_multiple <- merged %>%
   filter(Multiple_groups == "YES") %>% 
   droplevels()
 
-# How many studies in each?
-length(unique(source_multiple$SS)) # 153
-length(unique(ss_multiple$SS)) # 106
+# How many studies?
+length(unique(source_multiple$SS)) # source level = 153
+length(unique(ss_multiple$SS)) # study level = 106
 
 # Rows that are different between each? 
-diff <- setdiff(source_multiple, ss_multiple) # 133369 rows
+nrow(setdiff(source_multiple, ss_multiple)) # 133369 rows
 
-# Have a look at orders sampled at the source level
+# Have a look at multiple orders sampled at the source level
 source_multiple %>% dplyr::select(Source_ID, SS, Order, Sampling_method, Site_name, Habitat_as_described) %>% unique() %>% View()
 
-a <- source_multiple %>% dplyr::select(Source_ID, SS, Order, Sampling_method) %>% unique()
+# Which data is in Source_ID data which isn't in SS
+source_only <- anti_join(source_multiple, ss_multiple, by = c("Source_ID", "SS", "Order", "Sampling_method", "Site_name", "Habitat_as_described"))
 
-# Potential SS
-# AD2_2017__Novais 1
-
-
-
-
-
-
+# Simplify source level df
+source_only <- source_only %>%
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described)) %>% # Concatenate site and habitat_as_described
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo) %>% # Select the columns of interest
+  unique()
   
+# Simplify the study level df
+studies_only <- ss_multiple %>%
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described)) %>% # Concatenates 'Site_name' and 'Habitat_as_described'
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo) %>%
+  unique()
 
+# Merge the studies_only df and source_only df only by rows that match in their values for site_habitat_combo (i.e have the EXACT same sites and habitats)
+same_site_habitat <- inner_join(studies_only, source_only, by = ("site_habitat_combo")) 
+
+same_site_habitat %>% dplyr::select(SS.x, Order.x, Sampling_method.x, site_habitat_combo, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
+
+# The unique studies in this column are the studies which have the same sites and habitats 
+data2add <- unique(same_site_habitat$SS.y) %>% droplevels()
+
+print(data2add)
 ```
