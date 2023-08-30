@@ -28,24 +28,7 @@ predict_this_model <- function(model, order, percentage_diff, baseline, add_prim
   effects <- effects %>%
     mutate(Upper_ci = (median + 1.96*sd)) %>%
     mutate(Lower_ci = (median - 1.96*sd))
-  
-  if(missing(add_primary)){
-    NULL
-  }
-  
-  else {
-    
-    if(add_primary == "YES") {
-      
-      values <- effects[1,c(3,5:6)]
-      
-      columns_to_add <- c(3,5:6)
-      
-      for(i in 2:nrow(effects)) {
-        effects[i,][columns_to_add] <- effects[i,][columns_to_add] + values
-        
-      }
-    }}
+
   
 
   # if I don't supply percentage_diff as an argument then do nothing
