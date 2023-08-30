@@ -298,26 +298,33 @@ nrow(setdiff(source_multiple, ss_multiple)) # 133369 rows
 source_multiple %>% dplyr::select(Source_ID, SS, Order, Sampling_method, Site_name, Habitat_as_described) %>% unique() %>% View()
 
 # Which data is in Source_ID data which isn't in SS
-source_only <- anti_join(source_multiple, ss_multiple, by = c("Source_ID", "SS", "Order", "Sampling_method", "Site_name", "Habitat_as_described"))
+source_only <- anti_join(source_multiple, ss_multiple, by = c("Source_ID", "SS", "Order", "Sampling_method", "Site_name", "Habitat_as_described", "Latitude", "Longitude"))
+
+source_only %>% dplyr::select(Source_ID, SS, Order, Site_name, Habitat_as_described, Latitude, Longitude) %>% View()
 
 # Simplify source level df
 source_only <- source_only %>%
-  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described)) %>% # Concatenate site and habitat_as_described
-  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo) %>% # Select the columns of interest
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described),
+         lat_long_combo = paste(Latitude, Longitude)) %>% # Concatenate site and habitat_as_described
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo, lat_long_combo) %>% # Select the columns of interest
   unique()
   
 # Simplify the study level df
 studies_only <- ss_multiple %>%
-  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described)) %>% # Concatenates 'Site_name' and 'Habitat_as_described'
-  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo) %>%
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described),
+         lat_long_combo = paste(Latitude, Longitude)) %>% # Concatenates 'Site_name' and 'Habitat_as_described'
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo, lat_long_combo) %>%
   unique()
 
 # Merge the studies_only df and source_only df only by rows that match in their values for site_habitat_combo (i.e have the EXACT same sites and habitats)
-same_site_habitat <- inner_join(studies_only, source_only, by = ("site_habitat_combo")) 
+same_site_habitat <- inner_join(studies_only, source_only, by = c("site_habitat_combo", "lat_long_combo")) 
 
 same_site_habitat %>% dplyr::select(SS.x, Order.x, Sampling_method.x, site_habitat_combo, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
 
-# The unique studies in this column are the studies which have the same sites and habitats 
+sum(is.na(studies_only$lat_long_combo))
+sum(is.na(source_only$site_habitat_combo))
+
+# The unique studies in this column are the studies which have the EXACT same sites and habitats 
 data2add <- unique(same_site_habitat$SS.y) %>% droplevels()
 
 print(data2add)
