@@ -4,6 +4,10 @@ author: "Justin Isip"
 date: "2023-08-22"
 output: html_document
 ---
+
+# This Rmd takes the latest diversity extract (30th August 2023) and checks for any additional studies relevant for my analysis.
+
+
 ### Clear the workspace
 ```{r}
 rm(list=ls())
@@ -244,7 +248,7 @@ source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
 ### Read in the old and new diversity extract
 ```{r}
 diversity <- readRDS("./data/diversity-2022-04-13-02-33-10.rds")
-updated_diversity <- readRDS("./data/diversity-2023-08-21-02-33-23.rds")
+updated_diversity <- readRDS("./data/diversity-2023-08-30-02-33-17.rds")
 ```
 
 
@@ -259,20 +263,21 @@ if(check_sampling_effort_nas(updated_diversity) ==
 
 diversity <- correct_for_sampling_effort(diversity)
 
-updated <- correct_for_sampling_effort(updated_diversity)
-
-print(summarise_diversity(diversity)) ; print(summarise_diversity(updated_diversity))
+# Using the function loses rows for some reason.. 
+#updated_diversity <- correct_for_sampling_effort(updated_diversity)
 
 ```
 
+# Run it manually through the correct_for_sampling_effort function as I seem to lose data otherwise
 ```{r}
 
-
   div <- attr(updated_diversity, which = "diversity_extract")
-  data <- as.data.frame(updated_diversity) 
-  data$Sampling_effort[is.na(data$Sampling_effort)] <- 1
+
+  updated_diversity <- as.data.frame(updated_diversity) 
+
+    updated_diversity$Sampling_effort[is.na(data$Sampling_effort)] <- 1
   
-    data <- data %>%
+    updated_diversity <- updated_diversity %>%
 
     # Group by Study.
     group_by(SS) %>%
@@ -303,66 +308,6 @@ print(summarise_diversity(diversity)) ; print(summarise_diversity(updated_divers
     # abundances by the sampling efforts.
     mutate(Corrected_sampling_effort = Sampling_effort/max_sample_effort,
         Effort_corrected_measurement = Measurement * Corrected_sampling_effort) 
-
-
-    
-correct_for_sampling_effort <- function(data, verbose = TRUE){
-  require(dplyr)
-  require(magrittr)
-  require(tidyr)
-  
-  # Record source of diversity data, to use later as an attribute
-  div <- attr(data, which = "diversity_extract")
-  
-  data <- as.data.frame(diversity) # Avoiding tibbles.
-  
-  # Replace missing sampling effort values with 1
-  data$Sampling_effort[is.na(data$Sampling_effort)] <- 1
-  
-  data <- data %>%
-
-    # Group by Study.
-    group_by(SS) %>%
-    
-    # Check how many sampling efforts there are in each study.
-    mutate(n_sample_effort = n_distinct(Sampling_effort),
-           # Get the maximum sampling effort for the studies
-           max_sample_effort = max(Sampling_effort)
-    ) %>%
-    
-    ungroup() %>%
-    
-    # If the study has more than one sampling effort, correct the abundance
-    
-    # So if there's only one sampling effort, then create a 'dummy sampling 
-    # effort' of 1 so that we don't change the abundances when we do the 
-    # divisions. Otherwise, we give it the maximum sampling effort.
-    mutate(DividingEffort = ifelse(n_sample_effort == 1,
-                                   1, max_sample_effort)) %>%
-    
-    # If the diversity metric isn't sensitive to the effort, then we'll change
-    # the value to 1 too (so we won't end up changing the measurement), 
-    # otherwise leave it as it is.
-    mutate(DividingEffort = ifelse(Diversity_metric_is_effort_sensitive == 
-                                     FALSE, 1, DividingEffort)) %>%
-    
-    # Now let's create the effort-corrected measurement by dividing the
-    # abundances by the sampling efforts.
-    mutate(Corrected_sampling_effort = Sampling_effort/max_sample_effort,
-        Effort_corrected_measurement = Measurement * Corrected_sampling_effort) 
-  
-  # Summarise the corrected sampling efforts.
-  if (verbose == TRUE){
-    cat("Summary of corrected sampling effort values:\n")
-    print(summary(data$Corrected_sampling_effort))
-  }
-  
-  attr(data, which = "diversity_extract") <- div
-  attr(data, which = "when_created") <- Sys.time()
-  
-  return(data)
-}
-
 ```
 
 ### Merge sites
@@ -375,7 +320,7 @@ merged_new <- merge_sites(updated_diversity, verbose = TRUE)
 ```{r}
 # Start from the merged data not the model data
 five_orders <-
-  merged %>%
+  merged_new %>%
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
   # filter here for the orders of interest so that when we group by study, we are only looking at studies that observe those five orders
   group_by(SS) %>% # group by SS
