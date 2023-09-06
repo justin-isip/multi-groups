@@ -446,7 +446,7 @@ model.sel(x_m, x_m5, x_m5, x_m6, x_m7)
 
 ### Order comparisons for abundance
 
-# Testing influence.ME and robustlmm 
+# diptera_hymenoptera abundance prepare df
 ```{r}
 # Remove chubby datasets
 rm(merged, diversity)
@@ -467,210 +467,9 @@ diptera_hymenoptera <- model_data_ab %>% filter(SS %in% dip_hym_ss) %>%
   # then filter the two orders we want to compare, as some studies will have include more than those two orders
   filter(Order %in% c("Hymenoptera", "Diptera")) 
 
-# Optimal lmer model
-dhy_m2 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-    data = diptera_hymenoptera)
-
-summary(dhy_m2)
-plot(dhy_m2)
-
-# Robust lmer model
-r_m2 <- rlmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-    data = diptera_hymenoptera)
-
-summary(r_m2)
-plot(r_m2)
-
-# Vignette 
-vignette("rlmer")
-
-# w_b = robustness weights associated with the spherical random effects, returned in the same format as ranef()
-getME(r_m2, "w_b")
-getME(r_m2, "w_b_vector")
-
-# Extract the robustness weights for each of the observations
-weights <- getME(r_m2, "w_e")
-
-# Add those weights to the initial df
-diptera_hymenoptera$weights <- weights
-
-# Extract the potential outliers, i.e. those weights not equal to 1
-outliers <- diptera_hymenoptera[diptera_hymenoptera$weights != 1,]
-
-# Print
-print(outliers)
-
-# Hist of potential outliers
-hist(diptera_hymenoptera$weights, main = "histogram of robust weights", xlab = "weights")
-
-# Simplify
-outliers <- outliers %>% dplyr::select(Source_ID, SS, Order, weights) 
-
-# Average robustness weight per study
-robust_weights <- outliers %>% group_by(SS) %>% summarise(mean(weights)) 
-
-# Extract cooks weights
-cooks_weights <- as.data.frame(cooks.distance(dip_col_influence, sort = TRUE))
-
-# Extract studies
-cooks_weights$SS <- rownames(cooks_weights)
-
-# Reorder cols
-cooks_weights <- cooks_weights[, c("SS", "V1")]
-
-# Rename col
-cooks_weights <- rename(cooks_weights, "Cooks weights" = "V1")
-
-# Merge robust weights to cooks weights
-combined <- inner_join(robust_weights, cooks_weights, by = "SS")
-
-# Rename col
-combined <- rename(combined, "Robust weights" = "mean(weights)")
-
-# Plot the robust weights against the cooks weights
-plot(combined$`Robust weights`, combined$`Cooks weights`)
-
-# Robust lmer model
-r_m2 <- rlmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-    data = diptera_hymenoptera)
-
-# Influence is the workhorse function of the influence.ME package, Based on a priorly estimated
-# mixed effects regression model (estimated using lme4), the influence() function iteratively modifies
-# the mixed effects model to neutralize the effect a grouped set of data has on the parameters, and
-# which returns the fixed parameters of these iteratively modified models. These are used to
-# compute measures of influential data.
-
-dip_col_influence <- influence(r_m2, "SS") # based on the robust model
-
-# Calculate cooks distance for each of the studies
-cooks.distance(dip_col_influence, sort = TRUE)
-
-# Calculate % change for each of the parameters for each of the studies, sort based on a column 
-pchange(dip_col_influence, parameters = 1:2, sort= T, to.sort="Predominant_land_useYoung secondary vegetation", abs=FALSE)
-
-# Dotplot visualization of measures of influence
-plot(dip_col_influence, which="cook", sort=TRUE)
-
-# Test for changes in the level of statistical significance resulting from the deletion of potentially influential observations
-sigtest(dip_col_influence, test = 1.96, parameters = 0, sort = FALSE, to.sort = NA)
-
-# ^ the above gives the t statistic after deletion of each evaluated case, whether or not this new t statistic is statistically significant based on 1.96, and
-# whether or not this is significantly different from the original model. In other words, if a parameter was significant in the original model, but is no longer
-# significant after the deletion of a specific case in the model, this would be specified in the last column. 
-
-# Plot predictors
-plot_model(dhy_m2, type = "pred", show.data = T)
-plot_model(r_m2, type = "pred", show.data = T)
-
-
-tab_model(dhy_m2) 
-tab_model(r_m2)
-
-# Performance package
-check_model(dhy_m2)
-model_performance(dhy_m2)
-
 ```
-
-# Dummy data
+# diptera_hymenoptera linear mixed effects modelling
 ```{r}
-# Set the number of rows, mean and sd for the dummy data
-n <- 1000
-mean <- 100
-sd <- 1
-
-# Create the dummy data
-dummy <- data.frame(
-  Order = sample(c("Diptera", "Hymenoptera"), n, replace = TRUE), # single factor fixed effect with two levels
-  Abundance = rnorm(n, mean, sd), # based on above
-  Study = sample(paste0("Study", seq_len(4))) # Add 4 studies (random effects)
-)
-
-# make study 1 weird
-dummy <- 
-  dummy %>%
-  group_by(Study) %>%
-  mutate(Abundance = ifelse(Study == "Study1", rnorm(n, mean = 100, sd = 20), 
-                            rnorm(n, mean = 100, sd = 1)))
-
-# Have a look at the distribution of abundance values based on study
-ggplot(dummy, aes(x = Abundance, fill = Study)) +
-  geom_histogram(position = "identity", alpha = 0.5, bins = 10)
-
-# Make study a factor
-dummy$Study <- as.factor(dummy$Study)
-
-# Run the simple model
-dum_1 <-lmer(Abundance ~ Order + (1 | Study), data = dummy)
-
-# Robust model
-dum_2 <- rlmer(Abundance ~ Order + (1 | Study), data = dummy)
-
-# Extract the robustness weights from the robust lmm
-weights <- getME(dum_2, "w_e") 
-
-# Re-add them to the initial df
-dummy$weights <- weights
-
-# Have a look at the distribution of the weights
-ggplot(dummy, aes(x = weights, fill = Study)) +
-  geom_histogram(position = "identity", alpha = 0.5, bins = 10)
-
-# Extract the potential outliers, i.e. those weights not equal to 1
-outliers <- dummy[dummy$weights != 1,]
-
-# Average robustness weight per study across all obs
-robust_weights <- outliers %>% group_by(Study) %>% summarise(mean(weights)) 
-
-# Dummy influence
-dummy_influence <- influence(dum_2, "Study") # based on the robust model
-
-# Extract cooks weights
-cooks_weights <- as.data.frame(cooks.distance(dummy_influence, sort = TRUE)) # Study 1 has the highest cooks distance
-
-# Extract studies
-cooks_weights$Study <- rownames(cooks_weights)
-
-# Reorder cols
-cooks_weights <- cooks_weights[, c("Study", "V1")]
-
-# Rename col
-cooks_weights <- rename(cooks_weights, "Cooks weights" = "V1")
-
-# Merge robust weights to cooks weights
-combined <- inner_join(robust_weights, cooks_weights, by = "Study")
-
-# Rename col
-combined <- rename(combined, "Robust weights" = "mean(weights)")
-
-# Plot the robust weights against the cooks weights
-plot(combined$`Robust weights`, combined$`Cooks weights`) 
-
-# STUDY 1 HAS LOWEST ROBUSTNESS WEIGHTS AND HIGHEST COOKS DISTANCE AS EXPECTED!
-```
-
-
-# diptera_hymenoptera abundance
-```{r}
-# Remove chubby datasets
-rm(merged, diversity)
-
-# Filter for studies that only compare hymenoptera and diptera
-dip_hym_ss <-  model_data_ab %>% 
-  dplyr::select(SS, Order) %>% 
-  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
-  unique() %>% 
-  group_by(SS) %>% 
-  tally() %>% 
-  filter(n == 2) %>% 
-  pull(SS) %>% 
-  unique()
-
-# Filter our abundance model dataset for those studies
-diptera_hymenoptera <- model_data_ab %>% filter(SS %in% dip_hym_ss) %>% 
-  # then filter the two orders we want to compare, as some studies will have include more than those two orders
-  filter(Order %in% c("Hymenoptera", "Diptera")) 
-
 # maximal model
 dhy_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = diptera_hymenoptera)
@@ -715,7 +514,6 @@ summary(dhy_m2)
 anova(dhy_m2)
 
 ```
-
 ### Simulate diptera_hymenoptera effects
 ```{r}
 # Predict Diptera effects
@@ -756,12 +554,11 @@ cor(diptera, hymenoptera)
 
 
 rm(dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7, hym_1, hym_eff, diptera_hymenoptera, dip_eff, corr_dip_hym, diptera, hymenoptera)
-    
 ```
 
-# diptera_coleoptera abundance
-```{r}
 
+# diptera_coleoptera abundance prepare df
+```{r}
 # Studies
 dip_col_ss <-  model_data_ab %>% 
   dplyr::select(SS, Order) %>% 
@@ -773,34 +570,13 @@ dip_col_ss <-  model_data_ab %>%
   pull(SS) %>% 
   unique()
 
-## Backwards stepwise selection of random effects 
-
 # Model data
 diptera_coleoptera <- model_data_ab %>% filter(SS %in% dip_col_ss) %>% filter(Order %in% c("Diptera", "Coleoptera")) 
 
-# Robust model
-dip_col_robust <- rlmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-    data = diptera_coleoptera)
-
-# Calculate the influences of each study
-dip_col_influence <- influence(dip_col_robust, "SS") # based on the robust model
-
-# Calculate cooks distance for each of the studies
-cooks.distance(dip_col_influence, sort = TRUE)
-
-# Dotplot visualization of measures of influence
-plot(dip_col_influence, which="cook", sort=TRUE)
-
-weights <- weights(dip_col_robust)
-
-diptera_coleoptera$weights <- weights
-
-outliers <- diptera_coleoptera[diptera_coleoptera$weights != 1,]
-
-print(outliers)
-
-diptera_coleoptera %>% dplyr::select(Source_ID, SS, Order, weights) %>% filter(weights != 1) %>% View()
-
+```
+# diptera_coleoptera linear mixed effects modelling
+```{r}
+## Backwards stepwise selection of random effects 
 
 # maximal model
 dc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
@@ -844,7 +620,6 @@ model_plot(dc_m2)
 summary(dc_m2)
 
 ```
-
 ### Simulate diptera_coleoptera effects
 ```{r}
 # Predict Coleoptera effects 
@@ -888,7 +663,8 @@ rm(col_eff, corr, dc_m2, dc_m4, dc_m5, dc_m6, dc_m7, dip_eff, dip_m2, coleoptera
 
 ```
 
-# diptera_hemiptera abundance
+
+# diptera_hemiptera abundance prepare df
 ```{r}
 # Studies
 dip_hemi_ss <-  model_data_ab %>% 
@@ -904,19 +680,9 @@ dip_hemi_ss <-  model_data_ab %>%
 # Model data
 diptera_hemiptera <- model_data_ab %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) 
 
-# Robust model
-dip_hemi_robust <-rlmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
-              data = diptera_hemiptera)
-
-# Calculate the influences of each study
-dip_hemi_influence <- influence(dip_hemi_robust, "SS") # based on the robust model
-
-# Calculate cooks distance for each of the studies
-cooks.distance(dip_hemi_influence, sort = TRUE)
-
-# Dotplot visualization of measures of influence
-plot(dip_hemi_influence, which="cook", sort=TRUE)
-
+```
+# diptera_hemiptera linear mixed effects modelling
+```{r}
 # maximal model
 dh_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = diptera_hemiptera)
@@ -1004,7 +770,8 @@ rm(corr, dh_m1, dh_m4, dh_m5, dh_m6, dh_m7, dip_eff, diptera_hemiptera, hemi_eff
 
 ```
 
-# diptera_lepidoptera abundance
+
+# diptera_lepidoptera abundance prepare df
 ```{r}
 # Studies
 dip_lep_ss <-  model_data_ab %>% 
@@ -1020,6 +787,9 @@ dip_lep_ss <-  model_data_ab %>%
 # Model data
 diptera_lepidoptera <- model_data_ab %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) 
 
+```
+# diptera_lepidoptera linear mixed effects modelling
+```{r}
 # maximal model
 dl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = diptera_lepidoptera)
@@ -1064,7 +834,6 @@ model.sel(dl_m2, dl_m4, dl_m5, dl_m6, dl_m7)
 
 # model estimates
 summary(dl_m2)
-
 ```
 ### Simulate diptera_lepidoptera effects
 ```{r}
@@ -1110,9 +879,12 @@ cor(diptera, lepidoptera)
 rm(col_eff, corr, dl_m2, dl_m4, dl_m5, dl_m6, dl_m7, lep_eff, dip_eff, lep_m1, lepidoptera, diptera, diptera_lepidoptera)
 ```
 
+
+
+
 ## Hymenoptera
 
-# hymenoptera_coleoptera abundance
+# hymenoptera_coleoptera abundance prepare df
 ```{r}
 hym_col_ss <-  model_data_ab %>% 
   dplyr::select(SS, Order) %>% 
@@ -1126,7 +898,9 @@ hym_col_ss <-  model_data_ab %>%
 
 # Model data
 hymenoptera_coleoptera <- model_data_ab %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) 
-
+```
+# hymenoptera_coleoptera linear mixed effects modelling
+```{r}
 # maximal model
 hc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = hymenoptera_coleoptera)
@@ -1217,7 +991,8 @@ cor(coleoptera, hymenoptera)
 rm(col_eff, corr, hc_m2, hc_m4, hc_m5, hc_m6, hc_m7, hym_eff, hym_m1, coleoptera, hymenoptera, hymenoptera_coleoptera)
 ```
 
-# hymenoptera_hemiptera abundance
+
+# hymenoptera_hemiptera abundance prepare df
 ```{r}
 # Studies
 hym_hemi_ss <-  model_data_ab %>% 
@@ -1232,7 +1007,9 @@ hym_hemi_ss <-  model_data_ab %>%
 
 # Model data
 hymenoptera_hemiptera <- model_data_ab %>% filter(SS %in% hym_hemi_ss) %>% filter(Order %in% c("Hymenoptera", "Hemiptera")) 
-
+```
+# hymenoptera_hemiptera linear mixed effects modelling
+```{r}
 # maximal model
 hh_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = hymenoptera_hemiptera)
@@ -1320,7 +1097,8 @@ cor(hemiptera, hymenoptera)
 rm(hem_eff, corr, hh_m1, hh_m4, hh_m5, hh_m6, hh_m7, hym_eff, hym_m1, hemiptera, hymenoptera, hymenoptera_hemiptera)
 ```
 
-# hymenoptera_lepidoptera abundance
+
+# hymenoptera_lepidoptera abundance prepare df
 ```{r}
 # Studies
 hym_lep_ss <-  model_data_ab %>% 
@@ -1336,6 +1114,9 @@ hym_lep_ss <-  model_data_ab %>%
 # Model data
 hymenoptera_lepidoptera <- model_data_ab %>% filter(SS %in% hym_lep_ss) %>% filter(Order %in% c("Hymenoptera", "Lepidoptera")) 
 
+```
+# hymenoptera_lepidoptera linear mixed effects modelling
+```{r}
 # maximal model
 hl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = hymenoptera_lepidoptera)
@@ -1422,9 +1203,13 @@ cor(hymenoptera, lepidoptera)
 rm(hym_eff, corr, hl_m2, hl_m4, hl_m5, hl_m6, hl_m7, lep_eff, lep_m1, hymenoptera, lepidoptera, hymenoptera_lepidoptera)
 ```
 
+
+
+
 ## Hemiptera
 
-# hemiptera_lepidoptera abundance
+
+# hemiptera_lepidoptera abundance prepare df
 ```{r}
 # Studies
 hemi_lep_ss <-  model_data_ab %>% 
@@ -1439,7 +1224,9 @@ hemi_lep_ss <-  model_data_ab %>%
 
 # Model data
 hemiptera_lepidoptera <- model_data_ab %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera"))
-
+```
+# hemiptera_lepidoptera linear mixed effects modelling
+```{r}
 # maximal model
 hl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = hemiptera_lepidoptera)
@@ -1525,7 +1312,8 @@ cor(hemiptera, lepidoptera)
 rm(hem_eff, corr, hl_m1, hl_m4, hl_m5, hl_m6, hl_m7, lep_eff, lep_m1, hemiptera, lepidoptera, hemiptera_lepidoptera)
 ```
 
-# hemiptera_coleoptera abundance
+
+# hemiptera_coleoptera abundance prepare df
 ```{r}
 # Studies
 hemi_col_ss <-  model_data_ab %>% 
@@ -1541,6 +1329,9 @@ hemi_col_ss <-  model_data_ab %>%
 # Model data
 hemiptera_coleoptera <- model_data_ab %>% filter(SS %in% hemi_col_ss) %>% filter(Order %in% c("Hemiptera", "Coleoptera")) 
 
+```
+# hemiptera_coleoptera linear mixed effects modelling
+```{r}
 # maximal model
 hc_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = hemiptera_coleoptera)
@@ -1629,7 +1420,7 @@ rm(col_eff, corr, hc_m1, hc_m4, hc_m5, hc_m6, hc_m7, hem_eff, hem_m1, coleoptera
 
 ## Coleoptera
 
-### coleoptera_lepidoptera abundance
+### coleoptera_lepidoptera abundance prepare df
 ```{r}
 # Studies
 col_lep_ss <-  model_data_ab %>% 
@@ -1644,7 +1435,9 @@ col_lep_ss <-  model_data_ab %>%
 
 # Model data
 coleoptera_lepidoptera <- model_data_ab %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera"))
-
+```
+# coleoptera_lepidoptera linear mixed effects modelling
+```{r}
 # maximal model
 cl_m1 <-lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = coleoptera_lepidoptera)
@@ -1732,6 +1525,44 @@ rm(col_eff, corr, cl_m1, cl_m4, cl_m5, cl_m6, cl_m7, lep_eff, lep_m1, coleoptera
 ```
 
 
+# Combine cooks weights (abundance)
+```{r}
+
+cooks_weights_dip_hym <- cooks.distance(dip_hym_influence, sort = TRUE)
+cooks_weights_col_lep <- cooks.distance(col_lep_influence, sort = TRUE)
+cooks_weights_dip_col <- cooks.distance(dip_col_influence, sort = TRUE)
+cooks_weights_dip_hemi <- cooks.distance(dip_hemi_influence, sort = TRUE)
+cooks_weights_dip_lep <- cooks.distance(dip_lep_influence, sort = TRUE) 
+cooks_weights_hemi_col <- cooks.distance(hemi_col_influence, sort = TRUE)
+cooks_weights_hemi_lep <- cooks.distance(hemi_lep_influence, sort = TRUE)
+cooks_weights_hym_hemi <- cooks.distance(hym_hemi_influence, sort = TRUE)
+cooks_weights_hym_lep <- cooks.distance(hym_lep_influence, sort = TRUE)
+cooks_weights_hym_col <- cooks.distance(hym_col_influence, sort = TRUE)
+
+dip_hym <- data.frame(Study = rownames(cooks_weights_dip_hym), dip_hym_cooks = cooks_weights_dip_hym[,1])
+col_lep <- data.frame(Study = rownames(cooks_weights_col_lep), col_lep_cooks = cooks_weights_col_lep[,1])
+dip_col <- data.frame(Study = rownames(cooks_weights_dip_col), dip_col_cooks = cooks_weights_dip_col[,1])
+dip_hemi <- data.frame(Study = rownames(cooks_weights_dip_hemi), dip_hemi_cooks = cooks_weights_dip_hemi[,1])
+dip_lep <- data.frame(Study = rownames(cooks_weights_dip_lep), dip_lep_cooks = cooks_weights_dip_lep[,1])
+hemi_col <- data.frame(Study = rownames(cooks_weights_hemi_col), hemi_col_cooks = cooks_weights_hemi_col[,1])
+hemi_lep <- data.frame(Study = rownames(cooks_weights_hemi_lep), hemi_lep_cooks = cooks_weights_hemi_lep[,1])
+hym_hemi <- data.frame(Study = rownames(cooks_weights_hym_hemi), hym_hemi_cooks = cooks_weights_hym_hemi[,1])
+hym_lep <- data.frame(Study = rownames(cooks_weights_hym_lep), hym_lep_cooks = cooks_weights_hym_lep[,1])
+hym_col <- data.frame(Study = rownames(cooks_weights_hym_col), hym_col_cooks = cooks_weights_hym_col[,1])
+
+list_of_dfs <- list(dip_hym, col_lep, dip_col, dip_hemi,
+                       dip_lep, hemi_col, hemi_lep, hym_hemi,
+                       hym_lep, hym_col)
+
+combined <- reduce(list_of_dfs, full_join, by ="Study")
+
+combined[] <- lapply(combined, function(x) if(is.numeric(x)) round(x, digits= 4) else x)
+
+write.csv(combined, "cooks_distances_ab.csv", row.names = TRUE)
+
+```
+
+
 ### Order comparisons for Species Richness
 
 ### Prepare the model data
@@ -1764,9 +1595,9 @@ table(model_data_sr$Predominant_land_use, model_data_sr$Use_intensity)
 
 ## Diptera
 
-# diptera_hymenoptera species richness
-```{r}
 
+# diptera_hymenoptera species richness prepare df
+```{r}
 # Studies
 dip_hym_ss_sr <-  model_data_sr %>% 
   dplyr::select(SS, Order) %>% 
@@ -1783,7 +1614,9 @@ cbind(dip_hym_ss_sr, dip_hym_ss) %>% View()
 
 # Model data
 diptera_hymenoptera <- model_data_sr %>% filter(SS %in% dip_hym_ss_sr) %>% filter(Order %in% c("Diptera", "Hymenoptera"))
-
+```
+# diptera_hymenoptera linear mixed effects modelling
+```{r}
 # maximal model
 dhy_m1 <-lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
               data = diptera_hymenoptera)
@@ -1864,6 +1697,7 @@ cor(diptera, hymenoptera)
 
 rm(dip_eff, corr, dhy_m2, dhy_m4, dhy_m5, dhy_m6, dhy_m7, hym_eff, hym_m1, hymenoptera, diptera, diptera_hymenoptera)
 ```
+
 
 # diptera_coleoptera species richness
 ```{r}
@@ -1954,6 +1788,7 @@ cor(col, dip)
 
 rm(col_eff, corr, dc_m2, dc_m4, dc_m5, dc_m6, dc_m7, dip_eff, dip_m1, col, dip, diptera_coleoptera)
 ```
+
 
 # diptera_hemiptera species richness
 ```{r}
@@ -2046,9 +1881,9 @@ cor(dip, hemi)
 rm(hemi_eff, corr, dh_m3, dh_m4, dh_m5, dh_m6, dh_m7, dip_eff, hemi_m1, dip, hemi, diptera_hemiptera)
 ```
 
+
 # diptera_lepidoptera species richness
 ```{r}
-
 # Model data
 diptera_lepidoptera <- model_data_sr %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) 
 
@@ -2596,7 +2431,6 @@ cor(col, hemi)
 rm(col_eff, corr, hc_m1, hc_m4, hc_m5, hc_m6, hc_m7, hem_eff, hem_m1, col, hemi, hemiptera_coleoptera)
 ```
 
-
 ## Coleoptera
 
 # coleoptera_lepidoptera species richness
@@ -2689,6 +2523,33 @@ cor(col, lep)
 rm(col_eff, corr, cl_m2, cl_m4, cl_m5, cl_m6, cl_m7, lep_eff, lep_m1, col, lep, coleoptera_lepidoptera)
 ```
 
+# Combine cooks weights (species richness)
+```{r}
+
+dip_hym_sr <- data.frame(Study = rownames(cooks_weights_dip_hym_sr), dip_hym_cooks = cooks_weights_dip_hym_sr[,1])
+hym_col_sr <- data.frame(Study = rownames(cooks_weights_hym_col_sr), hym_col_cooks = cooks_weights_hym_col_sr[,1])
+dip_col_sr <- data.frame(Study = rownames(cooks_weights_dip_col_sr), dip_col_cooks = cooks_weights_dip_col_sr[,1])
+hemi_col_sr <- data.frame(Study = rownames(cooks_weights_hemi_col_sr), hemi_col_cooks = cooks_weights_hemi_col_sr[,1])
+col_lep_sr <- data.frame(Study = rownames(cooks_weights_col_lep_sr), col_lep_cooks = cooks_weights_col_lep_sr[,1])
+hym_hemi_sr <- data.frame(Study = rownames(cooks_weights_hym_hemi_sr), hym_hemi_cooks = cooks_weights_hym_hemi_sr[,1])
+hym_lep_sr <- data.frame(Study = rownames(cooks_weights_hym_lep_sr), hym_lep_cooks = cooks_weights_hym_lep_sr[,1])
+dip_hemi_sr <- data.frame(Study = rownames(cooks_weights_dip_hemi_sr), dip_hemi_cooks = cooks_weights_dip_hemi_sr[,1])
+dip_lep_sr <- data.frame(Study = rownames(cooks_weights_dip_lep_sr), dip_lep_cooks = cooks_weights_dip_lep_sr[,1])
+hemi_lep_sr <- data.frame(Study = rownames(cooks_weights_hemi_lep_sr), hemi_lep_cooks = cooks_weights_hemi_lep_sr[,1])
+
+
+list_of_dfs <- list(dip_hym_sr, hym_col_sr, dip_col_sr, hemi_col_sr,
+                       col_lep_sr, hym_hemi_sr, hym_lep_sr, dip_hemi_sr,
+                       dip_lep_sr, hemi_lep_sr)
+
+combined_sr <- reduce(list_of_dfs, full_join, by ="Study")
+
+combined_sr[] <- lapply(combined_sr, function(x) if(is.numeric(x)) round(x, digits= 4) else x)
+
+write.csv(combined_sr, "cooks_distances_sr.csv", row.names = TRUE)
+
+```
+
 # Calculate number of sites for each comparison of orders
 ```{r}
 # Sites
@@ -2735,7 +2596,6 @@ hemi_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %
 col_lep_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% unique() %>%  group_by(SSBS) %>% 
   tally() %>% filter(n == 2) %>% pull(SSBS) %>% unique()
 ```
-
 
 ## GGSAVE
 ```{r}
@@ -2798,4 +2658,3 @@ fourplus_ssbs <- model_data_ab %>% dplyr::select(SSBS, Order) %>% unique() %>%  
 ```{r}
 table(model_data_ab$Order, model_data_ab$Predominant_land_use) %>% View()
 ```
-
