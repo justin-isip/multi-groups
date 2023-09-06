@@ -1,0 +1,76 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: '2023-09-04'
+output: html_document
+---
+
+## R Markdown
+
+# This Rmd is analysing data from the expert elicitation process under GLiTRS, here I will look at the most common sampling methods for the orders in my analysis.
+
+# Read in the data from Andrew
+```{r}
+data <- read.csv("./data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  "))
+```
+
+# Load packages
+```{r}
+library(tidyverse)
+```
+
+# Have a look at the data
+```{r}
+# Number of experts per order
+data %>% group_by(ORDER) %>% tally() %>% arrange(desc(n))
+
+# Merge Spanish orders to English ones
+data <- 
+  data %>%
+  mutate(
+    ORDER = recode_factor(ORDER, "Coleópteros" = "Coleoptera","Dípteros" = "Diptera","Hyménoptères" = "Hymenoptera","Lépidoptères" = "Lepidoptera")) %>% droplevels()
+
+
+# Filter for orders for interest
+data <- data %>% filter(ORDER %in% c("Coleoptera", "Diptera", "Hemiptera", "Lepidoptera", "Hymenoptera"))
+
+# Simplify
+simple <- data %>% dplyr::select(ORDER, METHOD, OTHER.METHOD)
+
+# Remove rows with missing sampling method info
+available <- simple %>% filter(!is.na(METHOD))
+
+# Recheck number
+available %>% group_by(ORDER) %>% tally() %>% arrange(desc(n))
+
+
+model_data_ab %>% dplyr::select(SS) %>% unique() %>% View()
+
+model_data_ab %>% filter(SS == "AD1_2008__Billeter 6") %>% dplyr::select(SS, Order, Sampling_method) %>% View()
+
+# Bycatch studies
+model_data_ab %>% filter(SS == "DI1_2013__Rousseau 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View() # targetting hym
+model_data_ab %>% filter(SS == "VB1_2013__Burton 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name,  Sampling_method, TotalAbundance, logAbundance) %>% View() # leps in the litter?
+model_data_ab %>% filter(SS == "AD1_2011__Weiner 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "AD1_2011__Schuepp 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "SS1_2011__Lange 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+
+
+numbers <- data %>% group_by(ORDER) %>% count(METHOD)
+
+
+model_data_ab %>% dplyr::select(Source_ID, SS, Order, Sampling_method) %>% unique() %>% View()
+
+
+
+ggplot(data, aes(x = METHOD, y = len))
+
+
+data %>% ggplot() + aes(x = METHOD, y = ORDER) + geom_bar(stat = "identity") + facet_wrap(~ORDER)
+
+```
+
