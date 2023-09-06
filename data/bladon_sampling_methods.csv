@@ -1,0 +1,300 @@
+﻿ORDER ,SUBSET I,SUBSET II,Adults,Eggs,Larvae,Pupae,Nymphs,Early Instars,REGION,EUROPE,ASIA,NORTH AMERICA,SOUTH AMERICA,AFRICA,OCEANIA,METHOD,OTHER METHOD,SURVEY AREA SIZE,SURVEY DURATION,
+,,,,,,,,,,,,,,,,,,,,
+Odonata,,,Y,N,Y,N,N,N,West Palearctic region,Y,N,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Transect counts (max lenght 500 m), site counts (usually <3 ha)","site count: 1 hour count
+transect count of 500 m usually does not take much more than 1 hour
+
+but repeated visits during the flight season", 
+Phasmatodea,,,Y,N,N,N,N,N,"Primarily Europe, USA, Vietnam, Thailand, Colombia, Malaysia (remote surveying almost worldwide); Most data in the literature is focused on Argentina, Australia, Vietnam, Europe, Brazil",Y,Y,Y,Y,N,Y,"Malaise trapping;Beating sheet;Active visual surveys, such as transect walks and hand netting;", ,"Malaise Trapping (limited useful): 160x110cm
+Beating sheet: 20 ha
+Visual surveys (most useful): 30 ha
+*difficult to provide typical estimates, the boundary conditions differ a lot","Malaise trapping: 1-2 weeks
+Combination of beating sheets and visual surveying: 2-3 days
+*difficult to provide typical estimates, the boundary conditions differ a lot", 
+Hymenoptera,,Bumblebees,Y,N,N,N,N,N,Canada and the USA,N,N,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,1 km transects,1 km transects at each site each week (about 1 hour for a transect), 
+Odonata,,,Y,N,Y,N,N,N,Finland,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Usually a transect line (10m wide, 10m high) surrounding a lake, pond or a river. Depending on the size of the lake, these transect lines are usually up to 500m long, but can be considerably longer.","Usually one hour is enough to evaluate the species composition of small water bodies (transect lines less than 500m), when using only adult samples. Larvae require substantially longer processing times.", 
+Orthoptera,Acrididae,,Y,N,N,N,Y,Y,USA,N,N,Y,N,N,N,Other;,"Sweep netting, ring counts",Sweep netting has no area but I would guesstimate that each sweep is 0.1 sq m and I usually would do 160 sweeps so 16 sq m.  Rings are 0.1 sq m and I usually use 30 so 3 sq m.,"160 sweeps = 30 min
+30 rings (to collect data, not including ring deployment) = 15 min", 
+Lepidoptera,,Butterflies,Y,N,N,N,N,N,UK,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Visual assessments can be conducted on pollard walk transects for butterflies and day-flying moths. These are measured by amount of transects per area rather than a minimum size of an area. The UKBMS states that transects are typically 1km long, but this doesn't account for small sites or very large sites in a simple manner. In my experience, although dependent on the character/accessibility of the area questioned, a transect of 1k m in length is enough to capture the maximum species occupancy at a 3-5 ha site. There are further caveats to transect design beyond area though, including relative homogeneity of  a site. For example, a large species-poor grassland might not need the same survey effort as an equally sized structurally complex woodland with well managed rides, glades, shaded areas etc. Certainly under representing a site through poor transect to area ratio can potentially impact accuracy in abundance and diversity measurements, particularly where structure, habitat types and general character is diverse. 
+","Butterfly transect sampling season spans April to the end of September, with at least 26 visits to a site's transect in that period under specific weather conditions. This captures as much of each season as possible, including the June 'lull'. The amount of years sampled depends on the context of the study, but even relative comparisons between areas should aim to capture at least one of each season for a single year at the bare minimum. When comparing phenology, 3 - 5 + years could be considered the minimum to make any solid conclusions and account for any exceptional years such as the summer heatwave of 2022. 
+
+If the question refers to how long an individual survey takes, butterfly pollard walk transects typically take 20+ minutes per 1km transect depending on the terrain. Other effective visual surveys include the 15 minute walk, but this is contextual depending on the area being surveyed and should supplement pollard walks, not replace them, and would be conducted as the same frequency as the pollard walk.", 
+Hymenoptera,,Bees,Y,N,N,N,N,N,South Africa (particularly Succulent Karoo in the west of the country),N,N,N,Y,N,N,"Active visual surveys, such as transect walks and hand netting;",  ,"Survey depends on the (very variable) flower display, flower diversity and opportunity in a semiarid environment; survey areas range from a few 100 m² to about a hectare.","Again, this depends on opportunity (usually suitable weather), structure of the site (floral display, size) and number of bees. Range is from 1 hour (small site, few flowers and bees) to about 8-10 hours on different days.", 
+Coleoptera,"
+Coleoptera: Carabidae",,Y,N,N,N,Y,Y,Central Europe,Y,N,N,N,N,N,"Pitfall trapping;Other;Beating sheet;Active visual surveys, such as transect walks and hand netting;Light trapping;",Sweep netting,"pitfalls: hectares
+sweep net: hectares","pitfalls: 1 week periods, if possible year round
+sweep net: 1 hour", 
+Hemiptera, Auchenorrhyncha,,Y,N,N,N,Y,Y,Central Europe,Y,N,N,N,N,N,,,,,
+Orthoptera,,,Y,N,N,N,N,N,"Serbia, Montenegro, Croatia, Bosnia and Herzegovina, North Macedonia",Y,N,N,N,N,N,"Beating sheet;Acoustic monitoring;Active visual surveys, such as transect walks and hand netting;", ,All selected survey methods are used usually in a length of 50-100 meters,One hour, 
+Trichoptera,,,Y,N,Y,N,N,N,"I have been studying the Central and South America caddisfly fauna for the past 15 years. However, my main focus for the past 5 years is the Trichoptera fauna in the Amazon Rainforest.",N,N,Y,Y,N,N,"Light trapping;Malaise trapping;Active visual surveys, such as transect walks and hand netting;", ,Each field trip works on an average area of 400 square kilometers. The collecting methods are implemented along the margin of preserved streams and rivers (preferentially). My team usually explores around 80 square meters by day with the three methods listed above. ,"Each field trip lasts approximately 7-10 days, sampling one or two streams (distant at least 10km from each other) by day. Sampling starts around 2pm with active entomological nets by the stream margin as well as active immature search in the stream. Around 6pm active search stops, light traps are set up and sampling goes until 10pm. So, it is a 4-hour active search and 4-hour light trap sampling per day along 7-10 days.", 
+Odonata,,,Y,N,N,N,Y,Y,United States,N,N,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;Other;",Dip-net sampling (nymphs),"adults & exuviae - stream/river segments (~100m each), pond perimeters (length depends on pond size), wetland vegetated areas (meandering searches)  
+nymphs (lentic waters) - 5 1-m sweeps at netting stations (3 minimum, dependent on area) at least 10 m apart along littoral macrophyte beds (ponds/lakes) or scattered across inundated wetland vegetation zones ","adults: 20-40 minutes every 2-3 weeks
+exuviae: 30 minutes every 2-3 weeks
+nymphs: 2-5 collection events during May to September", 
+Hymenoptera,,,Y,N,N,N,N,N,Australia,N,N,N,N,N,Y,"Active visual surveys, such as transect walks and hand netting;Other;", ,"Highly variable depending on study (some are in gardens so 10's-100's of square metre, others are in bushland, so larger scale","Visual surveys on flowers: 2-10 minutes/plant, depending on study aims
+Sweep netting: variable, depends on site size and study aims", 
+Lepidoptera,,Butterflies,Y,N,N,N,N,N,United States,N,N,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,4-10 km,3-6 hours, 
+Lepidoptera,,Butterflies,Y,N,N,N,N,N,Bangladesh,N,Y,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Although I have extensively surveyed different parts of Bangladesh, I continued the survey for 3 years in Dhaka city.",Approximately 5-8 hours/day, 
+Orthoptera,,,Y,Y,Y,N,N,N,"Belgium, UK, Portugal",Y,N,N,N,N,N,"Light trapping;Beating sheet;Acoustic monitoring;Active visual surveys, such as transect walks and hand netting;", ,"Light trapping: ca. 10 lamps/night, so 10 times the attraction area of a lamp or ca 10*0.3ha=3ha
+Beating sheet: ca. 50 square metres in total/day
+Acoustic monitoring: ca. 15*3ha/day=45ha
+Transect walks with hand net: ca. 15*3ha/day=45ha","Light trapping: whole night from dusk till dawn, i.e. ca. 10 hours/day, and ca. 40 days/year
+Beating sheet: ca. 2 hours/day, and ca. 10 days/year
+Acoustic monitoring: ca. 8 hours, and ca. 10 days/year
+Transect walks with hand net: ca. 8 hours, and ca. 20 days/year", 
+Lepidoptera,Macro Lepidoptera,,Y,Y,Y,N,N,N,"Belgium, UK, Portugal",Y,N,N,N,N,N,,,,,
+Hemiptera,Heteroptera,Aphids,Y,N,N,N,N,N,UK; Ireland; Uganda mid tropics,Y,N,N,N,Y,N,"Active visual surveys, such as transect walks and hand netting;Beating sheet;Light trapping;Other;", ,"This will depend a great deal on the experimental design.
+For suction sampling, I would take a series of 10 sub-samples equivalent to 0.2m2, which would constitute a single sample. Then a series of samples would be taken; 3, 5 or 10 per location, depending on the aim of the project. If a treatment comparison was being made, then the number of samples might be 3 or 5 per replicate treatment. If the aim was to gain species list then a larger number of samples would be taken (20-100+), ideally over a period of weeks and months, to take account of phenological changes.
+Tree beating - I would select four points on a given tree and hold a net (approx 50 x 50 cm) under a suitable branch, then shake/beat vigorously for 1 minute.
+Sweep netting - using a figure of 8 sweeping technique, I would take a sample base on 20 back and forth motions, whilst walking forward. The exact area sampled is hard to quantify accurately (although it can be estimated). Each would be a sample and I would apply the same number of samples as for suction sampling, above.
+Light trapping - impossible to know the area of sampling.","Light trapping - typically I would run a light trap for 3-4 hours, and then spend 2 hours collecting.
+Tree beating, sweep netting and suction sampling would all be done on a regular basis over a period of weeks, and preferably months. Depending of logistical constraints, such as travel to and between locations, I would sample 1 or two days per week. In the UK I would do so from start of April to end of Sept, to take account of phenological changes.", 
+Lepidoptera,,,Y,N,N,N,N,N,Cyprus,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"With this survey, probably I will use transect walk. Minimum of 1 km. Depending on habitat and location can be 2 km. ","If it is around 1 km, my pollard walk survey may take 50 min 
+I think probably, we will discuss how often I need to do...Once a week or each two weeks may be.
+And of course, I think we need to discuss for how long we will carry out the surveys.", 
+Coleoptera,"Lampyridae, ",fireflies; glow-worm,Y,N,Y,N,N,N,"US, Taiwan",N,Y,N,Y,N,N,"Active visual surveys, such as transect walks and hand netting;Other;","Can also obtain flash counts from timelapse photography, videography",really depends on the habitat type and species present -- could be a 120m strip along the forest edge or a ~20 square meter patch of wetlands or field... when checking what species are present (not measuring abundance of particular species) I usually walk a kilometer or so over 1-2 hours,two hours per night over a 2-3 week reproductive season, 
+Lepidoptera,,Butterflies,Y,N,Y,N,N,N,Czech Republic,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,10-20 ha per plot,15-30 minutes per plot, 
+Hymenoptera,,Bees,Y,N,Y,N,N,N,"North America, Asia (China and India especially), ",Y,N,N,N,N,N,"Pan trapping;Active visual surveys, such as transect walks and hand netting;Malaise trapping;Light trapping;", ,Depends on project. Often opportunistic for phylogenetics unless for specific ecological projects.,Depends on project again. Too highly variable to give a number. , 
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,Brazil,N,N,N,Y,N,N,Pitfall trapping;Beating sheet;, ,"depending on the focus of the study. 
+250 meters transects. With traps each 25 meters",48 hours, 
+Coleoptera,,saproxylic beetles,Y,N,N,N,N,N,Belgium,Y,N,N,N,N,N,"Pan trapping;Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Other;",Flight interception trap = window trap; pheromone trap,"pan trap, pitfall trap, flight interception trap: single tree (100m2) to forest (100ha)
+transects: 500m representing 1km²
+visual survey: forest (100ha) or smaller
+pheromone trap: 3 traps representing 1km²
+","pan trap, pitfall trap, flight interception trap: 2 weeks up to 5 months (full season)
+transects: half an hour, 6 times per season
+visual survey: half a day, repeatedly in the season
+pheromone trap: 3 days up to 2.5 months (full season of particular species)", 
+Hymenoptera,,Bees; hoverflies,Y,N,N,N,N,N,"UK, Greece, Israel, Egypt, Ghana, Kenya, Uganda, Costa Rica",Y,Y,N,Y,Y,N,"Pan trapping;Active visual surveys, such as transect walks and hand netting;", ,"Transects: various depending upon the application, ranging from 1m2 fixed focal observation plots, through to walked transects (usually 1 to 3m wide and anything from 50 to 1000m long) 
+
+Pan trapping: this is not an area-based but an activity-based method, so hard to answer, but it might cover a few m2 to a few 100m2 depending upon the taxa and local context","Transects: various depending upon the application, ranging from 10mins to 60mins, with one or more repeat observations in a day, in a season or across multiple years
+ 
+Pan trapping: various but usually a minimum of 6hours ranging up to 2 days, with one or more repeat observations in a season or across multiple years", 
+Diptera,,,Y,N,N,N,N,N,"UK, Greece, Israel, Egypt, Ghana, Kenya, Uganda, Costa Rica",Y,Y,N,Y,Y,N,,,,,
+Lepidoptera,,,Y,N,N,N,N,N,"UK, Greece, Israel, Egypt, Ghana, Kenya, Uganda, Costa Rica",Y,Y,N,Y,Y,N,,,,,
+Odonata,,,Y,N,Y,N,N,N,USA & Canada,N,N,Y,N,N,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Other;",Exuvial surveys for Odonata,"Highly variable and none is ""typical""; from roadsides (e.g., Lepidopera: <100 m transect) to portions of waterbodies (e.g., Odonata: 100m-1km shoreline transects) to larger targeted habitats such as bogs and barrens (e.g., both Orders: 0.1 Ha to 5 Ha).  ","Highly variable and none is ""typical""; five minutes for incidental presence/absence roadside surveys to more comprehensive (diversity & relative abundance) surveys requiring 4 hrs or more.", 
+Lepidoptera,,,Y,N,Y,N,N,N,USA & Canada,N,N,Y,N,N,N,,,,,
+Lepidoptera,,Moths,Y,N,N,N,N,N,"Australia, Malaysia, France, China",Y,Y,N,N,N,Y,Light trapping;Other;,Termite transects,8 light traps a night x 20m radius light trap (approx.),months, 
+Isoptera,,,Y,N,N,N,N,N,"Australia, Malaysia, France, China",N,Y,N,N,N,Y,,,,,
+Orthoptera,,,Y,N,Y,N,N,N,"Russia, Kazakhstan, Kyrgyzstan, Uzbekistan, Turkmenistan, Tajikistan, China (Xinjiang), USA, Poland",Y,Y,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"transects - 25-50 sq m, sweep netting or netting during a fixed period of time - about 100-400 sq m","transects  - 10-20 min, netting - 15-60 min per one habitat", 
+Lepidoptera,,Diurnal butterflies,Y,N,N,N,N,N,Spain,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Transects around 1,5 km long (taking into account a band 5 meters wide, that would be an area of 7500 m2)","I survey from May to September each year, every 10 days in two sites and between mid June and mid August in four sites (that will do 38 visits per year, around 2 hours each visit = 76 hours/season). I also coordinate BMS monitoring of my team (around 10 people) and volunteers in the region (around 8 people).", 
+Lepidoptera,,,Y,Y,Y,Y,Y,Y,"Czechia, Slovakia",Y,N,N,N,N,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;Malaise trapping;", ,faunistic square,from 15 min for tansect to 1 hour on zig-zag survey, 
+Coleoptera,,Ground Beetles,Y,N,N,N,N,N,UK and Malaysia ,Y,Y,N,N,N,N,"Pitfall trapping;Beating sheet;Active visual surveys, such as transect walks and hand netting;", ,"Pitfall Trapping: 0.5 - 5 hectares
+Beating Sheet: 0.5 - 2 hectares
+Visual Surveys: 0.5 - 2 hectares","Pitfall Trapping: 48 - 72 hours
+Beating Sheet: 45 minutes - 3 hours (per session)
+Visual Surveys: 10 minutes - 1 hour (per trap/ transect)", 
+Hymenoptera,Formicidae,Ants,Y,N,N,N,N,N,UK and Malaysia ,Y,Y,N,N,N,N,,,,,
+Archaeognatha,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Zygentoma,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Dermaptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Blattodea,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Psocoptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Thysanoptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Hemiptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Coleoptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Isoptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Neuroptera,Complete Order,,Y,N,N,N,N,N,"Azores, Portugal",Y,N,N,N,N,N,Malaise trapping;Pitfall trapping;Beating sheet;Other;,"SLAM Trap (Sea, Land and Air Malaise traps)",50x50 m Plots for SLAM traps; 150 x 5 m transects for Pitfall and Beating,SLAM trap (3 months period); Pitfall (14 days period); Beating (30 samples in 2 hours), 
+Orthoptera,,,Y,N,N,N,Y,Y,Italy,Y,N,N,N,N,N,"Beating sheet;Acoustic monitoring;Active visual surveys, such as transect walks and hand netting;", ,500 square meters,"1 hour each, usually more on acoustic monitoring.", 
+Coleoptera,Scolytidae,,Y,N,N,N,N,N,"Germany, Austria, Portugal",Y,N,N,N,N,N,Other;Pitfall trapping;,"Formicidae: standardised baits, mostly using a sugar solution; Scolytidae: traps baited with semiochemicals (pheromones, attractants, repellents)","The area surveyed depends on the objectives of the project. Example: we have surveyed Formicidae in Portugal, covering about half of the country, at each site approximately one hectare.  Regarding Scolytidae, we generally survey plots of forest plantations, that is hectares.","Formicidae: i) Surveys with pitfall traps: days, repeated over weeks/months; ii) Surveys with
+ baits: hours, repeated over days/weeks; Scolytidae: days, repeated over weeks/months.", 
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,"Portugal, Spain; ",Y,N,N,N,N,N,,,,,
+Lepidoptera,,,Y,N,N,N,N,N,Romania,Y,N,N,N,N,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;", ,"For transect walks and hand netting i usually use 1 km transect, divided in 10 transect 100 meters each. For light traps it depends on what exactly i am studying. If i want to see rhe differences between different types of land management (agriculture, mowing, pasturing, etc), i will use a minimum of 5 traps for each type of land use. ","For night traps, from dawn to sunrise. The number of hours depend on the season. A 1 km transect takes around 1 hour. ", 
+Lepidoptera,,Fruit-feeding butterflies,Y,N,N,N,N,N,Brazil,N,N,N,Y,N,N,"Active visual surveys, such as transect walks and hand netting;Other;",Bait trapping (Van Someren-Rydon traps),"That depends very much on how many plots we put in. But if the question is about a single sampling plot, I ususally put in traps along 250 m transects -- that would sample an area of around 250 m², considering a plot o 1 m wide and 250 m long. Surveys with hand netting are conducted in the same transects, so they cover the same area.","Baiting traps (6 consecutive days)
+Hand nets (30 minutes * 4 days = 2 hours)", 
+Isoptera,,,Y,N,N,N,N,N,Nigeria ,N,N,N,N,Y,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;", ,Square metres,2-8 hours, 
+Hymenoptera,,,Y,N,N,N,N,N,Nigeria ,N,N,N,N,Y,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;",,,,
+Coleoptera,,,Y,N,N,N,N,N,Nigeria ,N,N,N,N,Y,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;",,,,
+Plecoptera, ,,Y,N,N,N,Y,Y,South Africa,N,N,N,N,Y,N,Malaise trapping;Light trapping;Other;,Aquatic Sampling with a Kick Net,"Malaise Traps: Sample in the area immediately surrounding a river. Usually within 10m of the river. 
+Light Traps: Sample in the area immediately surrounding a river. Usually within 5m of the river. 
+Aquatic Sampling with Kick net: Sample within a stretch of river, usually covering all available biotopes (E.g.: Riffles, Marginal Vegetation, etc.). This would usually cover a 10-20m stretch of river. ","Malaise Traps: Minimum of 24 hours, but generally a few days if possible. 1-5 days. 
+Light Traps: Overnight, roughly 12 hours. 
+Aquatic Sampling: 1-2 hours per site. ", 
+Diptera,,,Y,N,N,N,N,N,"France, Thailand",Y,Y,N,N,N,N,Other;,Sampling in pitfall flowers or specific homemade traps for Drosophilidae,"Mainly forests or parks, about 5 square meters or more","Sampling in pitfall flowers: 1/2 day
+Sampling with specific Drosophilidae traps: 24h", 
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,"Indonesia, Mozambique, Madagascar, Papua New Guinea",N,Y,N,N,Y,Y,"Pitfall trapping;Other;Active visual surveys, such as transect walks and hand netting;","Baiting (e.g. with food), soil monoliths",10 hectares,"Baiting, monoliths, active searching - hours
+Pitfall trapping - days", 
+Odonata,,,Y,N,N,N,N,N,UK.,Y,N,N,N,N,N,"Light trapping;Beating sheet;Active visual surveys, such as transect walks and hand netting;", ,Up to 1 Hectare.,"Beating Sheet - 1 hour.
+Light trapping - overnight on separate nights.
+Visual survey - 4 hours.", 
+Orthoptera,,,Y,N,N,N,N,N,UK.,Y,N,N,N,N,N,,,,,
+Lepidoptera,,,Y,N,N,N,N,N,UK.,Y,N,N,N,N,N,,,,,
+Orthoptera,,Grasshoppers; Crickets.,Y,N,N,N,Y,Y,UK ,Y,N,N,N,N,N,"Beating sheet;Acoustic monitoring;Active visual surveys, such as transect walks and hand netting;", ,"beating (for Orthoptera nymphs and earwigs) a total of 30 minutes at each site, 40 locations beaten in this time roughly, each location 5 strikes of a branch or foliage. 
+
+Gardiner T (2010) Hedgerow species richness influences the presence of Orthoptera and Dermaptera along green lanes in Essex, U.K. Entomologist’s Gazette 61: 53–64.
+
+acoustic monitoring and visual surveys (Orthoptera):  A 1-m wide × 400-m long transect was established in fields in recent study. Transects were arranged in a W shape (each arm 100 m) to ensure even coverage of each field and avoid any edge habitat effects. Each transect was walked at a slow, strolling pace (2 km/hr) on 3 occasions from May–August 2021. Adult individuals of all Orthoptera species along all transects were recorded acoustically and visually to determine assemblage composition and species diversity and richness. Nymphs flushed from a 1-m wide band in front of the observer were recorded along all transects. As it is difficult to distinguish between species in the early instars (though not impossible, see Thommen 2021), numbers for nymphs of all species were lumped together for recording purposes. The surveys were undertaken in vegetation sufficiently short (<50 cm) to minimize the possibility of overlooking nymphs in tall grass or non-stridulating species such as groundhoppers (Tetrigidae). With practice, it was relatively easy to ascertain the species of adults without capture (Gardiner and Hill 2006), although some species, such as long-winged conehead Conocephalus fuscus and Roesel’s bushcricket Roeseliana roeselii, are significantly under-recorded using visual transects. A dual visual and acoustic monitoring method has been used by Weiss et al. (2013) to ensure complete coverage of the orthopteran fauna of sites. In the current study, a stridulation monitoring technique was used to record adult males of species that stridulated along the transects at the same time as visual monitoring by flushing. Stridulation monitoring has been used to record cryptic species in Essex and has been found to be effective compared to visual sighting transects and pitfall traps. Bat detectors were not required in the current study as the surveyor was able to reliably detect stridulating males up to 20 m away either side of the transect. The weather conditions on survey days were favourable for insect activity, being largely sunny and warm (>17°C). 
+
+Gardiner T, Casey D (2022) ﻿Orthoptera in the early stages of post-arable rewilding in south-east England. Journal of Orthoptera Research 31(2): 163-172. https://doi.org/10.3897/jor.31.82317
+
+visual surveys (Hymenoptera)
+
+Bumblebee monitoring: In sea wall grasslands, 100 m long x 6 m wide transects were established. The methodology for surveying bumblebees followed that of Carvell et al. (2007). Surveys were undertaken between 10:00 and 17:00 h, when weather conditions conformed to the
+following criteria for the UK Butterfly Monitoring Scheme: 1) transects were not walked when the temperature is below 13°C; 2) between 13-17 °C, a transect could be walked providing there is at least 60% sun; 3) above 17 °C, a transect could be walked in any conditions, providing it is not raining; 4) when wind speeds are above 5 on the Beaufort scale, transects were not walked (Pollard & Yates 1993).
+
+Gardiner T. & Fargeaud K. (2018) The effect of late cutting on bumblebees (Bombus spp.) in sea wall
+grassland. Aspects of Applied Biology, 139, 43-50.","beating: 30 minutes per site 
+acoustic and visual surveys: 2-3 hours at each site in the different habitats. Depends on complexity of site.  ", 
+Dermaptera,,,Y,N,N,N,Y,Y,UK ,Y,N,N,N,N,N,,,,,
+Hymenoptera,,,Y,N,N,N,Y,Y,UK ,Y,N,N,N,N,N,,,,,
+Coleoptera,,Glow worms,Y,N,N,N,Y,Y,UK ,Y,N,N,N,N,N,,,,,
+Lepidoptera,,Butterflies,Y,N,N,N,Y,Y,UK ,Y,N,N,N,N,N,,,,,
+Blattodea,Blaberoidea,Except termites,Y,N,N,N,Y,Y,Peru; Guyana,N,N,N,Y,N,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Light trapping;", ,"Light trap: 1 light sheet in an open field (~1 hectare) once night per week on average.
+Pitfall trap: I make sets composed of 6 baited traps along a line  2-3 meters apart from each other. I usually put two or three sets in each habitat type (usually ~1 km apart from each other)",Minimum of 2 to a maximum of 8 days. On average 3 days., 
+Diptera,,Mosquitoes; Vector species,Y,Y,Y,Y,Y,Y,"UK, Ireland, South Africa",Y,N,N,N,Y,N,Other;,"Methods for aquatic systems, e.g., kick sampling, netting","Typically small areas, i.e., 1 square meter zones of waters; however, this does not necessarily reflect volume in habitats such as rivers",Typically 15 minutes or below, 
+Coleoptera,Histeridae ,,Y,N,N,N,N,N,India ,N,Y,Y,N,N,N,"Active visual surveys, such as transect walks and hand netting;Other;Pitfall trapping;",Manual collection ,Hectare ,From 1 hours to 4 hours , 
+Orthoptera,,,Y,N,N,N,Y,Y,"Mexico, USA, South Africa, Namibia, Mozambique.",Y,N,Y,Y,Y,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;Beating sheet;Other;",Sweeping net,Approximately 100 m2.,Approximately 2 hours., 
+Hymenoptera,,,Y,N,N,N,N,N,Nepal,N,Y,N,N,N,N,"Pan trapping;Active visual surveys, such as transect walks and hand netting;", ,25*50 m,1 hours 30 min, 
+Hemiptera,,Psyllids,Y,N,Y,N,Y,Y,"Europe New Zealand, Australia, Pacific Islands.",Y,N,N,N,N,Y,"Beating sheet;Malaise trapping;Light trapping;Pan trapping;Pitfall trapping;Active visual surveys, such as transect walks and hand netting;", ,"Malaise trapping: (usually limited by the availability of traps)1 trap per 1000 sq m.
+Light trapping: (usually limited by the availability of traps) 1 trap per 1000 sq m.
+Pan trapping: 3-4 traps per 100 sq m.
+Pitfall trapping: 3-4 traps per 100 sq m.
+Beating sheet: usually sampling each different plant within an area.
+Visual surveys: 1 plant every 3 per orchard.","Malaise trapping: leave the trap out for 1 week. Repeat x2 or x3 times a year depending on seasonality.
+Light trapping: 3-5 hours per night. Ideally multiple nights per week. Repeat depending on seasonality.
+Pan trapping: leave the traps out for 1 week. Repeat depending on seasonality.
+Pitfall trapping: leave the traps out for 1 week. Repeat depending on seasonality.
+Beating sheet: 2 or 3 branches per plant, about 20 minutes in total per plant.
+Visual surveys: 2 or 3 branches per plant, about 10 minutes per plant.", 
+Hemiptera,,Aquatic Species,Y,N,Y,N,N,N,Finland.,Y,N,N,N,N,N,Other;,Bottle traps and handnetting for aquatic insects.,"Pools/ponds/lakes vary a lot in size. The wetlands I survey are usually 60m2 - 15000m2 (1.5 hectares). 
+
+Bottle traps usually are placed a few meters apart from each other, but it is very difficult to say the unit a bottle trap can survey, because the home range of aquatic insects is unknown. 
+
+For handnetting, one can choose multiple 1m2 quadrats to survey.","For bottle traps, I usually leave the traps in water for 48 hours. For handnetting, I usually swipe the water and vegetation for 1 minute.", 
+Coleoptera,,Aquatic Species,Y,N,Y,N,N,N,Finland.,Y,N,N,N,N,N,,,,,
+Odonata,,,Y,N,Y,N,N,N,Finland.,Y,N,N,N,N,N,,,,,
+Hymenoptera,,,Y,N,N,N,N,N,France,Y,N,N,N,N,N,Other;,Flight-interception and multi-funnel traps,Around 7 hectares,"Our traps were hung in trees for months, approxymately from April/May to September. So around 5 months. ", 
+Coleoptera,Buprestidae,Agrilus,Y,N,N,N,N,N,France,Y,N,N,N,N,N,,,,,
+Coleoptera,Scarabaeidae,,Y,N,N,N,N,N,Tanzania,N,N,N,N,Y,N,Pitfall trapping;,,"50 x 50 m plots with four traps, one in each corner. The area really depends on the project, 5 replicate 50 x 50 m plots should be the minimum",48-72 hours, 
+Coleoptera,"Buprestidae; Cerambycidae
+",,Y,N,N,N,N,N,Iran,Y,N,N,N,N,N,Other;Pan trapping;,"Window trap, colored pan trap ",  units of 1 Hectare,15 days, 
+Lepidoptera,,Moths; Butterflies,Y,N,Y,N,Y,Y,Australia,N,N,N,N,N,Y,"Active visual surveys, such as transect walks and hand netting;Light trapping;", ,"1-5 square kilometres on average, though highly variable","Taxon & aim-dependent, but average 4-8 days (butterflies) or nights (light-trapping moths).", 
+Lepidoptera,Papilionidae; Pieridae; Nymphalidae; Hesperiidae; ,Macromoths,Y,N,N,N,N,N,"South Korea, Europe",Y,Y,N,N,N,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;", ,"15,000 square meters for line transect, 2800 square meters for light trapping","30 min for line transect, 5 hours for light trapping", 
+Lepidoptera,Hesperiidae,Butterflies; Moths,Y,N,Y,N,N,N,Canada Europe,Y,N,Y,N,N,N,Other;,"Checklist surveys as in Royer and Malone (1998). Very similar to ""active visual surveys, such as transect walks and hand netting"" and typical Pollard-Yates, but instead that meandering is permitted (Royer, R.A., Austin, J.E. and Newton, W.E. 1998. Checklist and “Pollard Walk” Butterfly Survey Methods on Public Lands. The American Midland Naturalist, 140: 358–371. University of Notre Dame.)","Depends on size of supportive Lepidopteran habitat, and whether surveying for adults or larvae. For adults, typically an average of 4.75 km long (x 5 m observations on both sides = approximately 0.05 km2) to cover 1.75 km2. For surveys where larvae were the focus, and I watched for adults while walking between larval host plants, an average of 1.25 km long covering an area of around 0.25 km2.","Again, depends on size of supportive Lepidopteran habitat, and whether surveying for adults or larvae. Given the same parameters as above: for adults during one survey excursion, typically 1 hr, and for larvae, typically 0.75 hrs. Typically, I survey the same places between 1-3 times during their anticipated flight period.", 
+Diptera,Muscidae; Athericidae,General Diptera,Y,N,N,N,N,N,"South Africa, Europ",Y,N,N,N,Y,N,"Malaise trapping;Active visual surveys, such as transect walks and hand netting;", ,"For Malaise traps: typically two Gressit & Gressit style Malaise traps are erected in study area, spaced at least 100m away from each other if possible, sometimes much further depending on accessibility. The sampling surface area, in this case the vertical flight interception area for each trap would be approx. 5.4 m2
+
+For sweepnetting/handnetting one typically ""surveys"" around one self for about 2 m in each direction, walking about 50 meters at a time before emptying the net into aspirators, so an estimated 100 m2 per ""transect"". The number of transects would depend on the distance covered, and again accessibility. ","Handnetting: approx. 4 hours a day
+
+Malaise traps are left up for the duration of being at the study area. 2-7 days. Specimens are not collected in ethanol but pinned and processed in the field. Diptera families typically preserved in ethanol, eg. Cecidomyiidae, Psychodidae are stored as such.", 
+Odonata,,,Y,N,N,N,N,N,"Malaysia (dung beetles, Odonata, Lepidoptera), Indonesia (Odonanta, dung beetles), Singapore (dung beetles, Odonata, Lepidoptera), Philippines (butterflies)
+UK (dung beetles, Lepidoptera), Finland (dung beetles)",Y,Y,N,N,N,Y,"Light trapping;Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Other;",Butterfly fruit baited traps; in temperate regions hand search pats for dung beetles and also can use flotation method,"It depends on the question.
+For dung beetles and butterfly fruit traps we set 10 traps 100-200m apart along transect lines, but other surveys have used fractal designs e.g. SAFE.
+For Odonata we follow standard protocols for surveying water bodies in an area for a set period of time so not area based per se.
+Butterflies usually use the Pollard walk method along a e.g. 500m/1km transect depending on the area size.
+for moths I have most frequently used actinic traps and we have shown they can have an attraction radius of around 30m so I would make sure that traps were set at least 50m-100m apart but numbers depends on area size/question.","For dung beetles trap is set for 48h. Ideally would repeat this at least twice a year in tropics (wet/dry) but obviously more regular monthly/bimonthly sampling would be good for monitoring
+
+Butterfly traps 24 hours
+Actinic moth traps set at dusk, collect just after sunrise
+Odonata - standardized search times at water bodies - depends on surveys - e.g. 15 minutes. Should be repeated over multiple days/times of year ideally.", 
+Coleoptera,,Dung Beetles,Y,N,N,N,N,N,"Malaysia (dung beetles, Odonata, Lepidoptera), Indonesia (Odonanta, dung beetles), Singapore (dung beetles, Odonata, Lepidoptera), Philippines (butterflies)
+UK (dung beetles, Lepidoptera), Finland (dung beetles)",Y,Y,N,N,N,Y,,,,,
+Lepidoptera,,Butterflies; Moths,Y,N,N,N,N,N,"Malaysia (dung beetles, Odonata, Lepidoptera), Indonesia (Odonanta, dung beetles), Singapore (dung beetles, Odonata, Lepidoptera), Philippines (butterflies)
+UK (dung beetles, Lepidoptera), Finland (dung beetles)",Y,Y,N,N,N,Y,,,,,
+Hemiptera,Psyllidae,Planthoppers,Y,N,N,N,N,N,Germany,Y,N,N,N,N,N,Malaise trapping;Beating sheet;Other;,"D-Vac, Sweep-net","Malaise trap 200x200m samples sites
+D-Vac, Sweep Net: 2 transects of 50 m each (width 1 m)","Malaise trap: 1 week
+D-Vac, Sweep Net: ~10 minutes each", 
+Ephemeroptera,,,Y,Y,Y,Y,Y,Y,"United Kingdom, NA",Y,N,Y,N,N,N,Malaise trapping;Light trapping;Other;,Aquatic kick sampling,"Aquatic kick sampling - 3 minute kick sample of major sub-habitats at a site followed by 1 minute of active searching. 
+Light trapping - deployment of light traps on banks of waterbodies. Usually left for a couple of hours at dusk with specimens of mayflies/stoneflies/caddisflies collected
+Malaise trapping - not generally used as too much collateral material. Typically left on site for a week or longer.","Aquatic kick sampling - 3 minutes plus 1 minute active sampling
+Light trapping - 2 hours
+Malaise trapping - 1 week to several months.", 
+Plecoptera,,,Y,Y,Y,Y,Y,Y,"United Kingdom, NA",Y,N,Y,N,N,N,,,,,
+Trichoptera,,,Y,Y,Y,Y,Y,Y,"United Kingdom, NA",Y,N,Y,N,N,N,,,,,
+Hymenoptera,,,Y,N,Y,N,N,N,United Kingdom,Y,N,N,N,N,N,Malaise trapping;Light trapping;Pan trapping;Pitfall trapping;Other;,Winkler bags,"Winkler bags 1 square metre of sieved litter, very variable for the others.","This largely depends on funds and logistics but Malaise, pan and pitfall traps I usually keep out for one week.", 
+Coleoptera,,,Y,N,N,N,N,N,United Kingdom,Y,N,N,N,N,N,,,,,
+Diptera,,,Y,N,N,N,N,N,United Kingdom,Y,N,N,N,N,N,,,,,
+Lepidoptera,,,Y,N,N,N,N,N,United Kingdom,Y,N,N,N,N,N,,,,,
+Coleoptera,,,Y,N,Y,N,Y,Y,Latvia,Y,N,N,N,N,N,Light trapping;Pitfall trapping;Beating sheet;Malaise trapping;, ,1 hectare,30 minutes, 
+Trichoptera,,,Y,N,Y,N,N,N,Slovenia,Y,N,N,N,N,N,Light trapping;Other;,"Aquatic sampling with hand net, riparian vegetation - hand net","Light trapping: ??, Hand net (riparian vegetation): 200 m2, aquatic samples: 250 m2 - 10000 m2 (depends on the river size)","Light trapping: 3 hours, Beating sheet: 30 minutes, aquatic samples: 1 hour", 
+Lepidoptera,Macrolepidoptera,,Y,Y,Y,Y,N,N,"Belarus, Ukraine, Poland",Y,N,N,N,N,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;Pitfall trapping;Other;",Pheromones (Osmoderma),hectares,"Light trapping -  about 30-50 days a year
+other methods - occasionally, as needed", 
+Coleoptera,,,Y,Y,Y,Y,N,N,"Belarus, Ukraine, Poland",Y,N,N,N,N,N,,,,,
+Diptera,Culicidae,,Y,Y,N,N,N,N,"Kosovo, Albania",Y,N,N,N,N,N,Light trapping;Other;,,500 m,10 days, 
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,"Brazil and United States - but also have some experience collecting ants in Peru, Venezuela, Nicaragua, and Germany",N,N,Y,Y,N,N,"Malaise trapping;Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Other;","Winkler extractor, Baiting, hand collection with forceps, and entomological aspirator","winkler - 1m2 sample in 100m, 200m or 1 km transects/site  - depends on the size area
+pitfall traps - 200 ml cup in 100 m, 200m or a 1 km transects/site  - depends of the size area
+Malaise, baiting, hand collection, and others - depends of the size area and the goal","pitfall traps - usually 24h, 48h or five days
+winkler  - after litter extracted, samples are hanging for around 24h or 48h.
+Malaise - 2 or 4 days or a week
+hand collection with forceps and entomological aspirator - depends the size of the area and the goal. Sometimes a 1 hour/site. If looking for a specific specie sometimes the whole day.", 
+Isoptera,,,Y,N,N,N,N,N,"Brazil and United States - but also have some experience collecting ants in Peru, Venezuela, Nicaragua, and Germany",N,N,Y,Y,N,N,,,,,
+Orthoptera,,; Kosciuscola tristis; ,Y,N,N,N,N,N,Australia,N,N,N,N,N,Y,"Active visual surveys, such as transect walks and hand netting;", ,"I would typically survey small areas, roughly 10m2","Short times, 15-30 min surveys", 
+Lepidoptera,,Agrotis infusa (Bogong Moths),Y,N,N,N,N,N,Australia,N,N,N,N,N,Y,,,,,
+Lepidoptera,,,Y,N,N,N,N,N,Greece,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"Semi-quantantive surveys:
+a. 300-m Pollard walks for butterflies, i.e. 300*5=1500 m2 
+b. 10x10m quadrats for orthoptera, i.e. 100 m2 
+Surveys for rare species:
+c. (time constrained) active sampling in suitable habitats, equaling ca. 50-100 m2 ","a. Butterfly transects: ca. 30 min
+b. Orthoptera quadrats: ca. 30 min
+c. Active visual surveys for rare species: ca. 60 min", 
+Orthoptera,,,Y,N,N,N,N,N,Greece,Y,N,N,N,N,N,,,,,
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,"Brazil, Europe",Y,N,N,Y,N,N,Pitfall trapping;Other;,Winkler extractor,"Plots of 200 to 250 meters in length, with 10 samples of each collection technique. Samples of 1m2 for the Winkler extractor, totaling 10m2 per plot.",48 hours, 
+Hymenoptera,Formicidae,,Y,N,N,N,N,N,Italy,Y,N,N,N,N,N,Pitfall trapping;,,"1 hectare or more, depending on the scale of investigation",7 days, 
+Hymenoptera,"Chalcidoidea
+
+",Eurytomidae,Y,N,N,N,N,N,"Iran 
+
+Europe: Germany",Y,N,N,N,N,N,Malaise trapping;Other;,Rearing materials from plant host,"Areas such as fields, pastures and virgin areas
+
+2 hectares",90 days, 
+Diptera,Culicidae; Ceratopogonidae,,Y,Y,Y,Y,N,N,Spain,Y,N,N,N,N,N,Light trapping;Pan trapping;Other;,Ovitrap for eggs,"It depends on the project. Around the Seville province, for example, 10.000 km²","From May to November, one sample every 45 days, with operating traps during 24h.", 
+Coleoptera,Coccinellidae ,,Y,Y,Y,N,Y,Y,"Netherlands, Belgium, Czechia",Y,N,N,N,N,N,"Beating sheet;Active visual surveys, such as transect walks and hand netting;", ,One square kilometer,2-6 hours over a period of weeks.,  
+Hymenoptera,,Bees,Y,N,N,N,N,N,Poland,Y,N,N,N,N,N,"Active visual surveys, such as transect walks and hand netting;", ,"about 1,5 ha","1-5 visits during a year, 1 hour at one visit", 
+Orthoptera,,,Y,N,N,N,N,N,Sweden,Y,N,N,N,N,N,"Light trapping;Pan trapping;Active visual surveys, such as transect walks and hand netting;", ,"Light trapping: per trap about 2-300 m, Pan trapping maybe 50 m, Pollard walks, 1500 m x 2,5 m","8h, 6h, 1,5h",
+Lepidoptera,,,Y,N,N,N,N,N,Sweden,Y,N,N,N,N,N,,,,,
+Hymenoptera,,,Y,N,N,N,N,N,Sweden,Y,N,N,N,N,N,,,,,
+Coleoptera,Carabidae; Scarabaeidae,,Y,N,Y,N,N,N,england,Y,N,N,N,N,N,"Pitfall trapping;Active visual surveys, such as transect walks and hand netting;Other;",baited pitfalls and hand searching dung,field scale (100m2 ish) and farm scale (300ha ish),"pitfall traps 7-14 days
+hand search 20 mins", 
+Mantodea,,,Y,Y,N,N,Y,Y,Mediterranean and neotropical areas,Y,Y,N,N,Y,N,"Light trapping;Active visual surveys, such as transect walks and hand netting;",,"Light trapping (adults): 500 sq meters
+
+Active visual survey (adults, juveniles, eggs): 500 sq meters","Light trapping (adults): 2 hours
+
+Active visual survey (adults, juveniles, eggs): 1 hours", 
+,,,,,,,,,,,,,,,,,,,,
+Diptera,,,Y,Y,Y,N,N,N,France,Y,N,N,N,N,N,Light Trapping ,,1 ha,2 days,
+Hymenoptera,,,Y,Y,Y,N,N,N,France,Y,N,N,N,N,N,,,,,
+,,,,,,,,,,,,,,,,,,,,
+Ephemeroptera,Caenidae,,Y,Y,Y,N,N,N,Brasil,N,N,N,Y,N,N,Malaise;Armadilha de luz;Outros - Especificar;,Lençol branco iluminado.,"Malaise - cerca de 100 metros quadrados
+Armadilha luminosa e lençol - cerca de 10 metros quadrados","Malaise - 15 dias
+Lençol Branco - 02 horas
+Armadilha de luz - 12 horas", 
+Tricópteros,,,Y,N,Y,N,Y,Y,Brazil.,N,N,N,Y,N,N,"Armadilha de luz;Levantamentos visua l-activo, como transectos e redes entomológicas;Outros - Especificar;",Aquatic D-Net,Streams.,"EPT e Odonata larva- entre coleta do substrato e triagem são de no mínimo quatro horas
+Odonata adulto - mínimo de duas horas de varredura visual em um trecho de 150 m no riacho.", 
+Plecópteros,,,Y,N,Y,N,Y,Y,Brazil.,N,N,N,Y,N,N,,,,,
+Odonata,,,Y,N,Y,N,Y,Y,Brazil.,N,N,N,Y,N,N,,,,,
+Ephemeroptera,,,Y,N,Y,N,Y,Y,Brazil.,N,N,N,Y,N,N,,,,,
+Dípteros,Syrphidae; Ropalomeridae; Sciomyzidae,,Y,N,Y,N,N,N,Brasil,N,N,N,Y,N,N,"Malaise;Armadilha de luz;Levantamentos visua l-activo, como transectos e redes entomológicas;", ,"Malaise = 50 hectares, mas no meu projeto de doutorado foi amostrado 33.000 km².
+Armadilha de Luz = 10 hectares
+Rede entomológica = 1 hectares","Malaise = mínimo 7 dias, máximo 3 meses
+Armadilha de Luz = 2 dias por ponto de coleta
+rede entomológica = 1 dia por ponto de coleta", 
+Coleópteros,Coccinellidae,,Y,Y,Y,Y,Y,Y,Brasil,N,N,N,Y,N,N,"Levantamentos visua l-activo, como transectos e redes entomológicas;guarda-chuva entomológico;Pantraps;", ,"pantrap 18 ha
+guarda-chuva e visual-ativo 8 a 10 ha","pantrap 18 ha - 1 ano
+guarda-chuva e visual-ativo 8 a 10 ha - 2 anos ", 
+Ephemeroptera,,Americabaetis alphus; Askola froehlichi; Massarella brieni; Miroculis mourei; Melanemerella brasiliana; Traverhyphes yuati ,Y,N,Y,Y,Y,Y,Brasil; Argentina; Colômbia ,N,N,N,Y,N,N,"Malaise;Armadilha de luz;Levantamentos visua l-activo, como transectos e redes entomológicas;", ,1000m²,10 dias,
+Hymenoptera,Apoidea,,Y,Y,Y,Y,N,N,Brasil,N,N,N,Y,N,N,"Pantraps;Outros - Especificar;Levantamentos visua l-activo, como transectos e redes entomológicas;",Ninhos-armadilha (trap-nests) para abelhas solitárias,"trap-nests= 437500hectares
+pantrap e Levantamentos visua l-activo, como transectos e redes entomológicas=2000metros","trap-nests= 15 meses
+pantrap e Levantamentos visua l-activo, como transectos e redes entomológicas=12 meses", 
+Arqueognatos,Formicidae,,Y,N,N,N,N,N,Brasil.,N,N,N,Y,N,N,Malaise;Pitfall;Outros - Especificar;,"Nossa principal técnica de coleta é o extrator de serapilheira do tipo mini-Winkler para a coleta de formigas epigeicas em áreas de florestas. Para maiores informações sobre esta técnica, por favor, consulte a referência abaixo:
+
+Bestelmeyer, B.T.; Agosti, D.; Alonso, L.E.; Brandão, C.R.F.; Brown Jr.; W.L.; Delabie, J.H.C. & Silvestre, R. 2000. Field techniques for the study of ground-dwelling ants. In: Agosti, D.; Majer, J.D.; Tennant de Alonso, L. & Schultz, T. (Eds.), Measuring and monitoring biological diversity: standard methods for ground living ants Smithsonian Institution Press, Washington, p.122144. Disponível em: http://antbase.org/ants/publications/20330/20330.pdf ","A escala regional varia muito dependendo dos objetivos do levantamento. Usualmente trabalhamos com 60 armadilhas do tipo pitfall (copos de 275 ml) divididas em 3 transectos de 500 metros (20 pitfalls por transecto separadas por 25 metros). Por sua vez os transectos são afastados 1km entre si.
+
+Para a técnica de Winkler normalmente coletamos amostras de serapilheira de 1m2 cobrindo a mesma área das armadilhas do tipo pitfall.",As armadilhas Malaise ficam expostas em média por 4 dias. Para as armadilhas do tipo pitfall o tempo de exposição é de 48hs. A coleta de formigas de serapilheira com o extrator de Winkler acontece em tempo real., 
+Hymenoptera,,,Y,N,N,N,N,N,Brasil.,N,N,N,Y,N,N,,,,,
+,,,,,,,,,,,,,,,,,,,,
+Odonata,,,Y,Y,Y,N,Y,Y,France,Y,N,N,N,N,N,"Enquêtes visuelles actives, telles que les promenades en transect et les filets à main;Piégeage de la lumière;Feuille de battement;",,1 hectare,2 hours or 2 days, 
+Hemiptera,Heteroptera,,Y,Y,Y,N,Y,Y,France,Y,N,N,N,N,N,,,,,
+Lépidoptères,Noctuoidea,Owlet Moths,Y,N,Y,N,N,N,France,Y,N,N,N,N,N,Piégeage de la lumière;,,Toute la france,3heures,
+Hyménoptères,,Termites,Y,N,N,N,N,N,North Africa,N,N,N,N,Y,N,Autre - Veuillez préciser;,"Pitfall traps, lavage du sol, tamisage de litière, recherche active sous les pierres, dans le bois, ...","Pifall traps : 1 piège par m2. 100 pièges par site = unité de 10000 m2
+Lavage du sol : 10 échantillons par site = 400 m2 
+Tamisage de litière : 20 échantillons par site = 400 m2 
+Recherche active (sous les pierres, le bois, ...) : 1000 m2 par 
+
+","Pifall traps : 1 Unité par jour (les pièges reste sur place pour une semaine)
+Lavage du sol : 1 unité pat jour
+Tamisage de litière : 20 échantillons par site = 400 m2  unité par jour 
+Recherche active (sous les pierres, le bois, ...) : 2 unités par jours 
+", 
+Blattodea,,,Y,N,N,N,N,N,North Africa,N,N,N,N,Y,N,,,,,
+Isoptères,,,Y,N,N,N,N,N,North Africa,N,N,N,N,Y,N,,,,,
+,,,,,,,,,,,,,,,,,,,,
+Odonata,,,Y,Y,Y,N,N,N,"Colombia, bosque seco tropical",N,N,N,Y,N,N,"Encuestas visuales activas, como transectos y redes manuales;Captura de luz;", ,"apoximandamente unos 10,000 metros cuadrados",6 horas,
+Odonata,,Hetaerina. ,Y,N,N,N,N,N,Guatemala ,N,N,N,Y,N,N,"Encuestas visuales activas, como transectos y redes manuales;", ,Metros cuadrados,Minutos ,
