@@ -321,6 +321,8 @@ same_site_habitat <- inner_join(studies_only, source_only, by = c("site_habitat_
 
 same_site_habitat %>% dplyr::select(SS.x, Order.x, Sampling_method.x, site_habitat_combo, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
 
+same_site_habitat %>% dplyr::select(Source_ID.y, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
+
 sum(is.na(studies_only$lat_long_combo))
 sum(is.na(source_only$site_habitat_combo))
 
