@@ -7,11 +7,13 @@ output: html_document
 
 ## R Markdown
 
-# This Rmd is analysing data from the expert elicitation process under GLiTRS, here I will look at the most common sampling methods for the orders in my analysis.
+# This Rmd is analysing a spreadsheet sent by Andrew, which has data gathered during the expert elicitation process. It contains the sampling methods selected by experts for their order of interest, I want to see if there are a set of optimal methods for each of the orders I am interested in. 
+
+# I will also take a look at the 
 
 # Read in the data from Andrew
 ```{r}
-data <- read.csv("./data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  "))
+data <- read.csv("./data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  ")) # add NAs for empty values
 ```
 
 # Load packages
@@ -30,7 +32,6 @@ data <-
   mutate(
     ORDER = recode_factor(ORDER, "Coleópteros" = "Coleoptera","Dípteros" = "Diptera","Hyménoptères" = "Hymenoptera","Lépidoptères" = "Lepidoptera")) %>% droplevels()
 
-
 # Filter for orders for interest
 data <- data %>% filter(ORDER %in% c("Coleoptera", "Diptera", "Hemiptera", "Lepidoptera", "Hymenoptera"))
 
@@ -38,39 +39,66 @@ data <- data %>% filter(ORDER %in% c("Coleoptera", "Diptera", "Hemiptera", "Lepi
 simple <- data %>% dplyr::select(ORDER, METHOD, OTHER.METHOD)
 
 # Remove rows with missing sampling method info
-available <- simple %>% filter(!is.na(METHOD))
+simple <- simple %>% filter(!is.na(METHOD))
 
-# Recheck number
-available %>% group_by(ORDER) %>% tally() %>% arrange(desc(n))
+# This gives me the precise number of experts, after removing rows with NAs (e.g. where experts did not fill in the sampling method)
+simple %>% group_by(ORDER) %>% tally() %>% arrange(desc(n))
+```
 
 
-model_data_ab %>% dplyr::select(SS) %>% unique() %>% View()
 
-model_data_ab %>% filter(SS == "AD1_2008__Billeter 6") %>% dplyr::select(SS, Order, Sampling_method) %>% View()
+
+
+```{r}
+model_data_ab %>% dplyr::select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+model_data_ab %>% filter(SS == "AD1_2008__Billeter 6") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
 
 # Bycatch studies
 model_data_ab %>% filter(SS == "DI1_2013__Rousseau 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View() # targetting hym
-model_data_ab %>% filter(SS == "VB1_2013__Burton 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name,  Sampling_method, TotalAbundance, logAbundance) %>% View() # leps in the litter?
+model_data_ab %>% filter(SS == "AD1_2008__Billeter 6") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
+model_data_ab %>% filter(SS == "VB1_2013__Burton 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Best_guess_binomial,  Sampling_method, TotalAbundance, logAbundance) %>% View() # leps in the litter?
 model_data_ab %>% filter(SS == "AD1_2011__Weiner 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
 model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
 model_data_ab %>% filter(SS == "AD1_2011__Schuepp 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
 model_data_ab %>% filter(SS == "SS1_2011__Lange 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
-model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
-model_data_ab %>% filter(SS == "CC1_2012__Waite 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Sampling_method, TotalAbundance, logAbundance) %>% View()
 
+
+model_data_ab %>% filter(SS == "TN1_2007__Bouyer 2") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Best_guess_binomial, Species, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+model_data_ab %>% filter(SS == "SC1_2011__Meijer 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Best_guess_binomial, Species, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+model_data_ab %>% filter(SS == "HW1_2011__Summerville 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Best_guess_binomial, Species, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+model_data_ab %>% filter(SS == "AD2_2018__Salles 1") %>% dplyr::select(SS, SSBST, Order, Parsed_name, Best_guess_binomial, Species, Taxon_name_entered, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+model_data_ab %>% filter(SS == "DI1_2013__Rousseau 2") %>% dplyr::select(SS, SSBST, Parsed_name, Order, Family, Genus, Species, Sampling_method, TotalAbundance, logAbundance) %>% View()
+
+
+taxa %>% filter(SS == "AD1_2002__Kruess 1") %>% dplyr::select(Source_ID, SS, Order, Family, Species, Taxon_name_entered, PrecisionScore) %>% View()
+
+merged %>% filter(SS == "AD1_2002__Kruess 1") %>% dplyr::select(Source_ID, SS, Order, Family, Species, Sampling_method) %>% View()
+
+
+five_orders %>% dplyr::select(Source_ID, SS, Order, Sampling_method) %>% unique() %>% View()
+
+t <- taxa %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered, PrecisionScore) %>% unique() %>% droplevels()
+
+d <- model_data_ab %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered, Sampling_method) %>% unique() %>% droplevels()
+
+new_data <- semi_join(t, d, by = c("Source_ID", "SS", "Order", "Taxon_name_entered")) %>% unique() %>% droplevels()
+
+
+model_data_ab %>% dplyr::select(Source_ID, SS, Order) %>% unique() %>% View()
+
+
+write.csv(new_data, "precision_scores.csv", row.names = TRUE)
 
 
 numbers <- data %>% group_by(ORDER) %>% count(METHOD)
 
 
-model_data_ab %>% dplyr::select(Source_ID, SS, Order, Sampling_method) %>% unique() %>% View()
-
-
-
-ggplot(data, aes(x = METHOD, y = len))
-
-
-data %>% ggplot() + aes(x = METHOD, y = ORDER) + geom_bar(stat = "identity") + facet_wrap(~ORDER)
 
 ```
+
 
