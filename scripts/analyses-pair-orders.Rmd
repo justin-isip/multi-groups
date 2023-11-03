@@ -245,7 +245,11 @@ source("/Applications/PhD/Projects/multi-groups/scripts/predict_this_model.R")
 
 ### Read in the data
 ```{r}
-diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
+# old extract
+# diversity <- readRDS("../data/diversity-2022-04-13-02-33-10.rds")
+
+# New one
+diversity <- readRDS("../data/diversity-2023-09-14-02-33-21.rds")
 
 ```
 
