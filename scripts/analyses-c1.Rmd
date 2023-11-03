@@ -1,0 +1,653 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: "2023-10-10"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# This Rmd does a series of different manipulations for my 1st chapter.
+
+##%######################################################%## \# \# \####
+This Rmd checks the latest diversity extract (14th \#### \####
+September) for Victorias 5 \#### \#### additional studies in the \####
+\#### New Forest (same sets of sites) to see \#### \#### if they are
+multi-taxa \#### \#### and suitable for my analysis. \#### \# \#
+##%######################################################%##
+
+# Read in the data
+
+```{r}
+# LATEST DIV EXTRACT
+diversity <- readRDS("./data/diversity-2023-09-14-02-33-21.rds")
+
+library(tidyverse)
+```
+
+# Victoria added 5 extra studies which AP mentioned, lets extract them and have a look
+
+```{r}
+
+# Find her studies
+diversity %>% 
+  filter(grepl('VB1_2020__Burton', SS)) %>% 
+  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Best_guess_binomial, Parsed_name, Order, Genus, Species, Sampling_method) %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
+  unique %>% 
+  View() 
+
+# Here they are 
+# VB1_2020__Burton 1
+# VB1_2020__Burton 2
+# VB1_2020__Burton 3
+# VB1_2020__Burton 4
+# VB1_2020__Burton 5
+
+# Find her studies
+# diversity %>% filter(SS %in% c("VB1_2020__Burton 1", "VB1_2020__Burton 2", "VB1_2020__Burton 3", "VB1_2020__Burton 4", "VB1_2020__Burton 5")) %>% 
+#  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  
+#  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Best_guess_binomial, Parsed_name, Order, Genus, Species, Sampling_method) %>% unique() %>% View()
+```
+
+# Next I want to analyse a spreadsheet sent by Andrew, which has data gathered during the expert elicitation process. It contains the sampling methods selected by experts for their order(s) of interest, I want to see if there are a set of optimal methods for each of the orders I am analysing using PREDICTS.
+
+# I will also extract the precision score for each study x order combination from the dataset and code that Andy sent, to see how well resolved the each of the orders are.
+
+# I will also have a look at some of the most influential studies in my dataset.
+
+# Read in the data from Andrew
+
+```{r}
+experts <- read.csv("./data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  ")) # add NAs for empty values
+```
+
+# Have a look at the data
+
+```{r}
+str(experts)
+
+# Number of experts per order
+experts %>% group_by(ORDER) %>% tally() %>% arrange(desc(n)) # looks like there are spanish names
+
+# Merge Spanish names with English
+experts <- 
+  experts %>%
+  mutate(
+    ORDER = recode_factor(ORDER, "Coleópteros" = "Coleoptera","Dípteros" = "Diptera","Hyménoptères" = "Hymenoptera","Lépidoptères" = "Lepidoptera")) %>% droplevels()
+
+# Filter for orders for interest
+experts <- experts %>% filter(ORDER %in% c("Coleoptera", "Diptera", "Hemiptera", "Lepidoptera", "Hymenoptera"))
+
+# Number of experts
+experts %>% 
+  dplyr::select(ORDER, METHOD, OTHER.METHOD) %>% 
+  filter(!is.na(METHOD)) %>%  # Remove rows with missing sampling method
+  group_by(ORDER) %>% 
+  tally() %>% # this counts the number of experts after removing rows with NAs (e.g. where experts did not fill in the sampling method)
+  arrange(desc(n)) %>% 
+  View()
+
+```
+
+##%######################################################%## 
+Taxonomic precision for each study  x order combination in my
+dataset 
+##%######################################################%##
+
+# This Rmd also uses the CuratedTaxonomicResolution.rds which has the taxonomic precision score for each of the values in the taxon_name_entered column,
+
+# I want to use these scores to summarise the taxonomic precision of each order within each of my studies (i.e. each study x order combination).
+
+# Precision score = 1, order level.
+
+# Precision score = 2, family level.
+
+# Precision score = 3, genus level.
+
+# Precision score = 4, sp level.
+
+```{r}
+# LATEST VERSION OF CURATED TAXON RESOLUTION 
+taxa <- readRDS("./data/CuratedTaxonResolution.rds") # his contains the precision scores for the latest diversity extract 
+
+str(taxa)
+
+# Lets look at the precision scores for one study
+taxa %>% dplyr::select(SS, Order, Taxon_name_entered, PrecisionScore) %>% filter(SS == "AD1_2002__Kruess 1") %>% View()
+```
+
+# Load functions
+
+```{r}
+source("/Applications/PhD/Andy/data_prep_functions.R")
+source("/Applications/PhD/Andy/site_comparison_functions.R")
+```
+
+# Prepare the diversity extract for multiple groups so I can extract the precision scores
+
+```{r}
+if(check_sampling_effort_nas(diversity) ==
+   FALSE) stop("Some studies have NA for sampling effort in only some sites!")
+
+diversity <- correct_for_sampling_effort(diversity) # correct for sampling effort
+
+print(summarise_diversity(diversity)) # quick summary
+```
+
+### Merge sites
+
+```{r}
+merged <- merge_sites(diversity, verbose = TRUE) 
+```
+
+# Filter merged for five orders of interest and then subset for studies that look at more than one of those orders simultaneously
+
+```{r}
+five_orders <-
+  merged %>%
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
+  # filter here for the orders of interest so that when we group by study, we are only looking at studies that observe those five orders
+  group_by(SS) %>% # group by SS
+  mutate(
+    Multiple_groups = 
+      case_when(
+        (length(unique(Higher_taxon))) > 1 ~ "YES",
+        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>%  
+  filter(Multiple_groups == "YES") %>% 
+  droplevels()
+```
+
+# Now I have subset PREDICTS for multiple groups, lets extract the precision scores
+
+```{r}
+# Lets simplify taxa
+simple <- taxa %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered, PrecisionScore) %>% unique() %>% droplevels()
+
+# Lets simplify five_orders 
+compare <- five_orders %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered) %>% unique() %>% droplevels()
+
+# Semi join returns all rows from simple which have a match in compare based on the same columns, including their precision scores.
+scores <- semi_join(simple, compare, by = c("Source_ID", "SS", "Order", "Taxon_name_entered")) %>% unique() %>% droplevels()
+
+# Lets have a look at the most influential study in my dataset, which also contains bycatch in the form of larvae.
+scores %>% dplyr::select(SS, Order, Taxon_name_entered, PrecisionScore) %>% filter(SS == "DI1_2013__Rousseau 2") %>% unique() %>% View()
+
+# Lets have a look at taxa resolved to order level
+scores %>% filter(PrecisionScore == 1) %>% View() # many instances of larvae
+```
+
+# Larvae
+
+```{r}
+# Lets have a look at larvae
+five_orders %>% 
+  filter(grepl('larv|immatu|pupa|nymph', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae
+  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
+  unique %>% 
+  View() 
+
+# lets pull those larvae studies
+larvae_studies <-
+  five_orders %>% 
+  filter(grepl('larv|immatu|pupa|nymph', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae
+  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
+  unique() %>% 
+  pull(SS) %>%
+  droplevels()
+
+# Have a look at those DEFINITE larvae studies
+levels(larvae_studies)
+```
+
+# Lets calculate the mean precision scores for each of the orders within a study
+
+```{r}
+scores %>% group_by(SS, Order) %>% summarise(mean(PrecisionScore)) %>%  View()
+
+scores %>% 
+  group_by(SS, Order) %>% # group by order within study
+  mutate(`Mean_Score` = mean(PrecisionScore)) %>% # new column which is the average precision score across taxa for each study x order combo
+  group_by(SS) %>% # group by study now
+  filter(n_distinct(Mean_Score) > 1) %>% # give me the rows whereby the precision scores between orders is different
+  group_by(SS, Order) %>% 
+  summarise(mean_score = mean(Mean_Score)) %>% # resummarises the mean score for each order within a study
+  View()
+
+mean_scores <- 
+  scores %>% 
+  group_by(SS, Order) %>% # group by order within study
+  mutate(`Mean_Score` = mean(PrecisionScore)) %>% # new column which is the average precision score across taxa for each study x order combo
+  group_by(SS) %>% # group by study now
+  filter(n_distinct(Mean_Score) > 1) %>% # give me the rows whereby the precision scores between orders is different
+  group_by(SS, Order) %>% 
+  summarise(mean_score = mean(Mean_Score)) %>% 
+  droplevels()
+
+# lets look at a potential bycatch study based on one order being resolved much better than the other orders.
+
+scores %>% filter(SS == "VB1_2023__Smith 1") %>%  View()
+
+five_orders %>% 
+  filter(SS == "VB1_2023__Smith 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View()
+```
+
+# Lets dig a bit deeper
+
+```{r}
+# Give me rows where the difference in precision scores between orders is >= 2 in taxonomic ranks
+big_diff <- mean_scores %>% group_by(SS) %>% filter((max(mean_score) - min(mean_score)) >= 2) %>% ungroup() %>% droplevels()
+
+# How many studies have a difference in precision scores between orders of >= 2
+unique(big_diff$SS)
+
+# Here they are
+#[1] AD1_2007__Meyer 1     AD1_2010__Quintero 1  AD2_2018__Salles 1    AD2_2018__Salles 2    DI1_2013__Rousseau 1  DI1_2013__Rousseau 2 
+#[7] SH1_2011__Todd 1      SJ2_2016__Fleurance 1 SJ2_2016__Fleurance 2 SJ2_2016__Fleurance 3 SJ2_2016__Fleurance 4 SS1_2015__Ponge 1    
+#[13] VB1_2005__Eggleton 1  VB1_2005__Eggleton 2  VB1_2006__Smith 1     VB1_2008a_Smith 1     VB1_2012a_Carpenter 1 VB1_2013__Burton 2   
+#[19] VB1_2020__Burton 2    VB1_2023__Smith 1
+
+# Will have to look through each of studies
+
+##%######################################################%##
+#                                                          #
+####         [1] AD1_2007__Meyer 1  - all good          ####
+#                                                          #
+##%######################################################%##
+
+# check precision scores
+scores %>% filter(SS == "AD1_2007__Meyer 1") %>%  View() # leps resolved to order level
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "AD1_2007__Meyer 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() # method is flower visitation observation which is fine for all orders
+
+##%######################################################%##
+#                                                          #
+####        AD1_2010__Quintero 1 - leps bycatch         ####
+#                                                          #
+##%######################################################%##
+
+
+scores %>% filter(SS == "AD1_2010__Quintero 1") %>%  View() # leps resolved to order level
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "AD1_2010__Quintero 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Experts = pan traps good for all orders except leps.
+# Montgomery = pan traps leps are caught as bycatch only. 
+
+##%######################################################%##
+#                                                          #
+####      AD2_2018__Salles 1 - dips/leps bycatch        ####
+#                                                          #
+##%######################################################%##
+
+
+scores %>% filter(SS == "AD2_2018__Salles 1") %>%  View() # col, dip, hemi resolved to order level, only hymenoptera resolved to sp level.
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "AD2_2018__Salles 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dip and Lep bycatch.
+# Montgomery = pitfall traps for diptera (bycatch), lep (bycatch).
+# looks like the study sampled arthropods but focused on ants, and classified them into functional groups, regardless dip and leps can be assumed bycatch.
+
+
+##%######################################################%##
+#                                                          #
+####      AD2_2018__Salles 2 - dips bycatch             ####
+#                                                          #
+##%######################################################%##
+
+
+scores %>% filter(SS == "AD2_2018__Salles 2") %>%  View() # same source as above just seperate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "AD2_2018__Salles 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dips bycatch (no leps in study 2)
+# Montgomery = pitfall traps for diptera (bycatch), lep (bycatch).
+# looks like the study sampled arthropods but focused on ants, and classified them into functional groups, regardless dips bycatch.
+
+
+##%######################################################%##
+#                                                          #
+#   DI1_2013__Rousseau 1 - larvae, dips, leps bycatch   ####
+#                                                          #
+##%######################################################%##
+
+scores %>% filter(SS == "DI1_2013__Rousseau 1") %>%  View() # same source as above just seperate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "DI1_2013__Rousseau 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# looking at source paper, soil core sampling was not the only method, pitfall traps were used too.
+#  for this study we will get rid of all larvae, and all dipterans + leps, as they are bycatch in soil sampling.
+
+##%######################################################%##
+#                                                          #
+#   DI1_2013__Rousseau 2 - larvae, dips, leps bycatch   ####
+#                                                          #
+##%######################################################%##
+
+scores %>% filter(SS == "DI1_2013__Rousseau 2") %>%  View() # same source as above just seperate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "DI1_2013__Rousseau 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# More things resolved to sp level in this second study
+# same as above, get rid of larve, dips + leps.
+
+##%######################################################%##
+#                                                          #
+#   SH1_2011__Todd 1 - all good.                        ####
+#                                                          #
+##%######################################################%##
+
+scores %>% filter(SS == "SH1_2011__Todd 1") %>% unique() %>% View() 
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SH1_2011__Todd 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+#  All 5 orders in this study, and everything resolved well except leps.
+# Mixed traps = 11 traps (3 flight intercept traps, three yellow pan traps, 5 pitfall traps)
+# Because of mixed traps, impossible to identifty bycatch for this study. 
+
+##%######################################################%##
+#                                                          #
+#   SJ2_2016__Fleurance 1 - all good.                   ####
+#                                                          #
+##%######################################################%##
+
+scores %>% filter(SS == "SJ2_2016__Fleurance 1") %>% unique() %>% View() 
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SJ2_2016__Fleurance 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# 3 orders (col,hemi, hym) - col well resolved, hym all resolved to Formicidae, hemi resolved to order level.
+# Sampling method = pitfall traps which is fine for these groups.
+# No signs of bycatch.
+
+##%######################################################%######%####
+#                                                                   #
+#   SJ2_2016__Fleurance 2 - dip + non ant hymenopterans bycatch  ####
+#                                                                   #
+##%###############################################################%##
+
+scores %>% filter(SS == "SJ2_2016__Fleurance 2") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SJ2_2016__Fleurance 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Study 2, we know the SM = pitfall traps, so dipterans are bycatch, non-formicidae hymenopterans are bycatch. 
+
+##%######################################################%######%####
+#                                                                   #
+#   SJ2_2016__Fleurance 3 - dip + non ant hymenopterans bycatch ####
+#                                                                   #
+##%###############################################################%##
+
+scores %>% filter(SS == "SJ2_2016__Fleurance 3") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SJ2_2016__Fleurance 3") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Study 3, EXACT same as above - so dipterans are bycatch, non-formicidae hymenopterans are bycatch. 
+
+##%######################################################%######%####
+#                                                                   #
+#   SJ2_2016__Fleurance 4 - dip + non ant hymenopterans bycatch  ####
+#                                                                   #
+##%###############################################################%##
+
+scores %>% filter(SS == "SJ2_2016__Fleurance 4") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SJ2_2016__Fleurance 4") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Study 4, EXACT same as above - so dipterans are bycatch, non-formicidae hymenopterans are bycatch. 
+
+##%######################################################%######%##########
+#                                                                         #
+# SS1_2015__Ponge 1  - larv, dips, leps, non ant hymenopterans bycatch ####
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "SS1_2015__Ponge 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "SS1_2015__Ponge 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# SM = soil cores, lots of larvae in this study.
+# Larvae bycatch, leps bycatch, dipterans bycatch, non formicidae ants bycatch.
+
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2005__Eggleton 1  - larv, dips, leps, non ant hymenopterans bycatch #
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2005__Eggleton 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2005__Eggleton 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# The source paper states two sampling methods
+# 1. hand sorting of specimens using a quadrat in the soil. 
+# 2. Winkler method to sample litter and top layer of soil.
+# Study 1 = Winkler method/litter collection. 
+# Lots of coleopteran larvae in this study
+# Only col and ants went resolved taxonomically.
+# Paper states "All sampled macrofauna specimens were identified to named species, except larval forms, adult Hemiptera and adult non-ant Hymenoptera,
+# none of which could be consistently identified to species."
+# Larvae bycatch, leps bycatch, dipterans bycatch, non ant hymenopterans probably bycatch.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2005__Eggleton 2  - larv, dips, leps, non ant hymenopterans bycatch #
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2005__Eggleton 2") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2005__Eggleton 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Study 2 = hand sorting of specimens using a quadrat in the soil.
+# Larvae bycatch, leps bycatch, dipterans bycatch, non ant hymenopterans probably bycatch.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2006__Smith 1  - ALL GOOD 
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2006__Smith 1") %>% unique() %>% View() 
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2006__Smith 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Checking Sharepoint this study contains unpublished data from a PhD thesis, but looking at the sampling method (soil cores)
+# And that the study only samples beetles and ants, no obvious bycatch here.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2006__Smith 1  - ALL GOOD 
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2008a_Smith 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2008a_Smith 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Checking Sharepoint this study contains unpublished data from a PhD thesis, but looking at the sampling method (soil cores)
+# And that the study only samples beetles and ants, no obvious bycatch here.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2006__Smith 1  - Larvae bycatch, dipterans bycatch, non-ant hymenopterans bycatch and leps bycatch. 
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2008a_Smith 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2008a_Smith 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# There are col, dip and lep larvae.
+# Sampling method = soil core, source paper confirms, but soil cores were examined via handsorting, Berlese-Tulgren funnels and Winkler bags.
+# Paper states larvae of col, lep and dip were also found in large numbers but not identified to sp level due to taxonomic intractability.
+# Larvae bycatch, dipterans bycatch, non-ant hymenopterans bycatch and leps bycatch.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2012a_Carpenter 1  - diptera bycatch, leps bycatch, non-ant hymenopterans bycatch and coleopteran larvae bycatch. 
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2012a_Carpenter 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2012a_Carpenter 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Sampling method = various, predicts data entry form states its soil cores / pitfall traps.
+# therefore, diptera bycatch, leps bycatch, non-ant hymenopterans bycatch and coleopteran larvae bycatch.
+# this study comes from unpublished data and has coleopteran larvae
+
+##%######################################################%######%##########
+#                                                                         #
+#  VB1_2013__Burton 2  - diptera bycatch, leps bycatch, non-ant hymenopterans bycatch and col larvae bycatch.
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2013__Burton 2") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2013__Burton 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# This is Victoria's MSc thesis, sampling method = leaf litter, checking her actual thesis confirms this.
+# diptera bycatch, leps bycatch, non-ant hymenopterans bycatch and col larvae bycatch.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2020__Burton 2  - just dipterans.
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2020__Burton 2") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2020__Burton 2") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Sampling method = multiple, messaged Victoria and the sampling methods were soil pits for hand sorted inverts and then mustard vermifuge for earthworms
+# Just diptera are bycatch.
+
+##%######################################################%######%##########
+#                                                                         #
+# VB1_2023__Smith 1  - hemi, col, lep and hymenoptera all bycatch.
+#                                                                         #
+##%#####################################################################%##
+
+scores %>% filter(SS == "VB1_2023__Smith 1") %>% unique() %>% View() # same source as above just separate study
+
+# check multi-group subset
+five_orders %>% 
+  filter(SS == "VB1_2023__Smith 1") %>%  
+  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
+  unique() %>%  
+  View() 
+
+# Sampling method = baited traps, checking source paper baited traps used bovine liver to attract necrophagous Diptera/
+# Everything other than diptera is bycatch, as the large number of hymenopteras were caught incidentally as they were frequently observed 
+# killing and eating adult diptera as well as eggs.
+
+
+```
