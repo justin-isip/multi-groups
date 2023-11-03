@@ -1,0 +1,113 @@
+---
+title: "Untitled"
+author: "Justin Isip"
+date: '2023-09-08'
+output: html_document
+---
+
+```{r}
+
+model_data_ab[model_data_ab$SS == "AD1_2002__Kruess 1", "Sampling_method"]
+
+# Base R method
+df[df$study == "study1", "sampling_method"] <- "methodX"
+
+# Dplyr method for a single study
+model_data_ab <- model_data_ab %>%
+  mutate(Sampling_method = if_else(study == "study1", "methodX", sampling_method))
+
+# Rename sampling methods for multiple studies
+model_data_ab <- model_data_ab %>%
+  mutate(Sampling_method = case_when(
+    SS == "AD1_2002__Vazquez 1" ~ "flower visitation observation",
+    SS == "AD1_2009__Vergara 1" ~ "flower visitation observation",
+    SS == "AD1_2011__Bates 1" ~ "Pan traps/sweep nets/hand searching",
+    SS == "AD1_2011__Weiner 1" ~ "flower visitation observation",
+    SS == "AD1_2013__Grass 1" ~ "flower visitation observation",
+    SS == "AR1_2008__Basset 1" ~ "Malaise traps/yellow pan traps/pitfall traps",
+    SS == "CC1_2005__Barratt 1" ~ "soil sample",
+    SS == "CC1_2005__Barratt 2" ~ "soil sample",
+    SS == "CC1_2008__Schon 1" ~ "soil cores along transects",
+    SS == "CC1_2008__Schon 2" ~ "soil cores along transects",
+    SS == "CC1_2010__Schon 2" ~ "soil cores along transects",
+    SS == "CC1_2012__Waite 2" ~ "bole traps/flight intercept trap/foliage sampling",
+    SS == "CC1_2013__Litchwark 1" ~ "flower visitation observation",
+    SS == "CC1_2014__Rader 1" ~ "flight intercept trap/pan trap",
+    SS == "DG1_2012__Ge 1" ~ "soil cores along transects",
+    SS == "GP1_2009__Vasconcelos 2" ~ "litter collection",
+    SS == "HP1_2006__Lachat 1" ~ "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap",
+    SS == "MH1_2009__Turner 1" ~ "Leaf litter sampling/ferns cut and bagged/fogging for canopy species",
+    SS == "SC1_2005__Richardson 1" ~ "litter collection",
+    SS == "SJ2_2019__Eckert 1" ~ "Pitfall trapping/direct sampling (i.e. active searching) within quadrats",
+    SS == "VB1_2005__Eggleton 2" ~ "Soil sample/leaf litter sample",
+    SS == "VB1_2012a_Carpenter 1" ~ "Soil cores/pitfall traps",
+    SS == "VB1_2012__LeightonGoodall 1" ~ "Leaf litter sampling/soil sampling",
+    TRUE ~ Sampling_method
+  ))
+
+levels(model_data_ab$Sampling_method)
+
+# Below are all the sampling methods
+# [1] "aerial transect"               "baited pit-fall traps"         "bole trap"                     "fixed plots/quadrats"          "flight trap"                  
+# [6] "flower visitation observation" "glue traps"                    "light trap"                    "line/belt transects"           "litter collection"            
+# [11] "live traps"                    "malaise traps"                 "mixed traps"                   "multiple"                      "pan traps"                    
+# [16] "pit-fall traps"                "point counts"                  "soil core"                     "soil cores along transects"    "soil sample"                  
+# [21] "specimen collection"           "suction samplers"              "sweep net"                     "sweep_netting"                 "systematic searching"         
+# [26] "trap nests"                    "various"                       "visual encounter survey"       "window trap"            
+
+
+# Check a couple to see that its worked
+model_data_ab[model_data_ab$SS == "AD1_2002__Vazquez 1", "Sampling_method"]
+model_data_ab[model_data_ab$SS == "AD1_2009__Vergara 1", "Sampling_method"]
+model_data_ab[model_data_ab$SS == "HP1_2006__Lachat 1", "Sampling_method"]
+model_data_ab[model_data_ab$SS == "MH1_2009__Turner 1", "Sampling_method"]
+
+
+model_data_ab$Sampling_method <- as.factor(model_data_ab$Sampling_method)
+
+levels(model_data_ab$Sampling_method)
+
+sample <- 
+  model_data_ab %>%
+  mutate(
+    Sampling_method = recode_factor(Sampling_method,
+                                  "baited pit-fall traps" = "Baited/non baited pit fall traps",
+                                  "pit-fall traps" = "Baited/non baited pit fall traps",
+                                  "soil core" = "Soil sampling",
+                                  "soil cores along transects" = "Soil sampling",
+                                  "soil sample" = "Soil ssampling",
+                                  "sweep_netting" = "sweep net",
+                                  )
+
+
+```
+
+### Remove larvae
+```{r}
+model_data_ab %>% grep("larv", ignore.case = T)
+
+# Find rows where any column contains "larv" (case-insensitive)
+# apply function is used with 'MARGIN = 1' which means we're applying a function across rows.
+# Inside the function, for each row, we're checking if any of the columns (i.e. each element of that row) contains the string "larv"
+# this is accomplished using any combined with grepl
+# the result is a a logical vector (T or F) for each row, indicating if that row contains "larv" in any of its columns.
+rows_with_larvae <- apply(model_data_ab, 1, function(row) any(grepl("larv", row, ignore.case = TRUE)))
+
+# Filter out those rows
+df_without_larvae <- model_data_ab[!rows_with_larvae, ]
+
+# Look at the rows with larvae
+df_with_larvae <- model_data_ab[rows_with_larvae,] %>% droplevels()
+
+df_with_larvae %>% dplyr::select(Source_ID, SS, Parsed_name, Best_guess_binomial, Taxon_name_entered, Order, Family, Genus, Species, Sampling_method) %>% unique() %>% View()
+
+TN1_2008__Ngai 1
+
+model_data_ab %>% 
+  filter(SS == "TN1_2008__Ngai 1") %>% View()
+
+
+df_with_larvae$SS %>% unique()
+
+```
+
