@@ -1,0 +1,820 @@
+---
+title: "Quantifying taxonomic resolution"
+author: "Andy Purvis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exploring and quantifying taxonomic resolution of names in PREDICTS studies
+
+Although PREDICTS data compilers are asked to specify the "resolution" of the taxon names in the data they upload, there is no guidance on what the different options mean. Together with the sheer number of data compilers, this means that the taxonomic precision of the taxon name entered is unlikely to have been recorded in a consistent way.
+
+Because any measure of compositional similarity will, logically, be sensitive to the level of taxonomic level of the units in the assemblages being compared, this issue has the potential to bias our estimates of compositional similarity and hence BII. The magnitude of any bias is unknown.
+
+In order to investigate the possible bias, we first need to understand the taxonomic resolution of the names in our data. This markdown is an attempt to do that, and to quantify the taxonomic precision of the names within each PREDICTS study. 
+
+The names of bird species in some studies added by GN1, JB3 and XH1 have not been curated in the database. However, Patrick Walkden and Tom Weeks have curated these names carefully against the BirdLife taxonomy, and have been able to match most of the species. Patrick shared a spreadsheet with the curation they did; it is used here.
+
+A new column, Resolution_inferred, is added to the taxa data frame, and filled programmatically. This is then used as the basis for quantifying taxonomic precision.
+
+## Inputs and outputs
+
+The names of all input and output files are given in the `filenames` object in the first block of code. The outputs have two attributes for provenance: `when_created` (the `Sys.time()`) and `taxa_file` (the name of the taxa extract that was used as the main input).
+
+```{r load-packages-and-data}
+library(treemap)
+library(knitr)
+library(report)
+options("max.print" = 2000) # Was 1000, but we want to see more of the data.
+
+filenames <- list(                                    # Easier to find names.
+  taxa_file = "taxa-2022-09-16-02-32-56.rds",
+  output_file = "CuratedTaxonResolution.rds",         # Used for tax_prec later.
+  overview_file = "overview.Rds")                     # Study-level summary.
+
+taxa <- readRDS(file.path("data", filenames$taxa_file)) # Read taxon names in.
+```
+
+## Which Resolution_entered have spaces in the Taxon_name_entered?
+Names of families and genera would generally not be expected to contain spaces (unless the taxonomic authority is given, or perhaps "spp" used as a suffix). Common names, groups of species and names with Uncertain resolution may or may not contain spaces. If "Scientific" is taken to mean "Latin binomial", then there should be spaces, but it might be taken to mean "Any Latin name". This block first tabulates numbers of names without (FALSE) and with (TRUE) spaces in each Resolution category. Then it further crosses that two-way classification with whether the name is unmatched to a species in COL (FALSE) or is matched (TRUE).
+
+
+```{r which-names-have-spaces}
+twoway <- table(taxa$Resolution_entered, grepl(" ", taxa$Taxon_name_entered))
+attr(twoway, which="dimnames")[[2]] <- c("Without spaces", "With spaces")
+knitr::kable(twoway, caption="Which Resolutions have spaces in the name?")
+
+```
+
+The next block of code adds columns encoding which combination each name belongs to, and tabulates the frequency of each combination; it also sets up a new column, `Resolution_inferred`, initially populating it was `NA` values.
+
+```{r encode-combinations}
+taxa$Space <- grepl(" ", taxa$Taxon_name_entered)
+taxa$Match <- taxa$Species != ""
+
+mytab <- as.data.frame(table(taxa$Resolution_entered, taxa$Space, taxa$Match))
+names(mytab)[1:3] <- c("Resolution_entered", "Space in name?", 
+                       "Sp-level COL match?")
+knitr::kable(mytab)
+
+# Add columns flagging membership of the groups referred to in the text above.
+taxa$unmatched_common_names <- taxa$Resolution_entered=="Common name" & taxa$Match==FALSE
+taxa$spaced_family_names <- taxa$Resolution_entered=="Family" & taxa$Space==TRUE
+taxa$spaced_genus_names <- taxa$Resolution_entered=="Genus" & taxa$Space==TRUE
+taxa$matched_genus_names <- taxa$Resolution_entered=="Genus" & taxa$Match==TRUE
+taxa$unspaced_morphosp_names <- taxa$Resolution_entered=="Morphospecies" & taxa$Space==FALSE
+taxa$unspaced_sci_names <- taxa$Resolution_entered=="Scientific" & taxa$Space==FALSE
+taxa$uncertain_names <- taxa$Resolution_entered=="Uncertain"
+
+# Initialise new column, Resolution_inferred, as NAs.
+taxa$Resolution_inferred <- NA
+
+```
+
+## Which combinations appear odd?
+
+### Common names
+188 common names are unmatched to the species level. Scanning these, it is clear that, as well as there being many names that are specific, others (e.g., "honey bees") are not. 
+
+I have reclassified some of these by inspection of the names and the Curate pages.
+
+```{r common-names}
+droplevels(taxa$Taxon_name_entered[taxa$unmatched_common_names==TRUE]) # Print.
+
+# Classify by inspection.
+really_a_group <- c("Bats", "Liverwort")
+really_a_genus <- "Honey bees"
+really_a_family <- c("Beans", "Grass", "Cactus", "Bamboo")
+
+# Initialise all these to "Common name"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Common name"] <- 
+  "Common name" # The default
+
+# Overwrite with corrected values where needed.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Common name" & 
+                           taxa$Taxon_name_entered %in% really_a_group] <- 
+  "Above family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Common name" & 
+                           taxa$Taxon_name_entered %in% really_a_genus] <- 
+  "Genus"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Common name" & 
+                           taxa$Taxon_name_entered %in% really_a_family] <- 
+  "Family"
+
+```
+
+### Genus names
+
+5068 genus names include spaces. These could be correct (e.g., "Bracon spp", referring to multiple species), but could also be a miscomprehension (e.g., "Bracon sp1", which actually refers to a morphospecies rather than a genus). By inspection, these names are overwhelmingly intended to mean morphospecies, e.g., "Ateuchus sp.1", provisional binomials (e.g., "Collybia cf dryophyla") and even straight binomials (e.g., "Gastridium ventricosum"). About 65 of the names contain "spp", suggesting multiple species (though four of these have a "1" after). I have coded `Resolution_inferred` the using a set of rules:
+
+• If it has a COL species-level match, `Resolution_inferred` becomes "Scientific"
+
+• If it has "cf" as a word other than the first, `Resolution_inferred` becomes "Scientific" (except for three cases identified in the code below)
+
+• If there is a number, `Resolution_inferred` is "Morphospecies" (a very few appear to actually be Scientific, but they'll be treated the same way in the intended analysis)
+
+• If its first word ends in "idae" or "aceae" and it contains "spp", `Resolution_inferred` is "Family" (e.g., "Cerambycidae spp.")
+
+• If it has " sp" (but not "spp"), `Resolution_inferred` is "Morphospecies"
+
+• If it has "aff" or similar, `Resolution_inferred` is "Morphospecies"
+
+Additionally, generic names without spaces could refer to higher taxa. I did not recognise any of them as being orders, classes etc (and those ending "era" and "ida" were all genera), but several had endings indicating tribes or subfamilies. I have given these a `Resolution_inferred` of Family.
+
+Working through this identified some names that needed recuration using the Curate tab of the database, as follows:
+
+• "Flax sp1" through to "Flax sp8" had been matched by the database to a particular species of Linum rather than the genus, so I have overridden this manually.
+
+
+```{r genus-names}
+#1. Genus names with spaces
+cases <- which(taxa$spaced_genus_names==TRUE)
+case_names <- taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE]
+
+have_digits <- grep("[0-9]", 
+                    taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+                    value=TRUE) #These are overwhelmingly morphospecies 
+have_cf <- setdiff(grep(" cf", 
+                        taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+                        value=TRUE), c( "Ficinia cf.", "Tetraria cf.", 
+                                        "Thesidium cf."))
+
+have_idae <- grep("idae", 
+                  taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+                  value=TRUE)
+have_aceae <- grep("aceae", 
+                   taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+                   value=TRUE)
+poss_fam <- c(have_idae, have_aceae)
+fam <- grep("spp", poss_fam, value=TRUE)
+
+sp <- grep(" sp", taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+           value=TRUE)
+spp <- grep(" spp", taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+            value=TRUE)
+sp_not_spp <- setdiff(sp, spp) #These are morphospecies
+
+spp_not_fam <- setdiff(spp, fam) # These ARE genera; but that's the default
+
+aff <- c(grep("(af)", taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+              value=TRUE),
+         grep("aff.", taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+              value=TRUE),
+         grep(" aff ", taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE], 
+              value=TRUE))
+# These are morphospecies really.
+
+# Look at the names with spaces not yet classified, and hard-code results.
+setdiff(case_names, c(have_digits, have_cf, poss_fam, sp_not_spp, aff))
+
+morph_from_looking <- c("Mecodema n.sp.", "n.g. n.sp.", 
+                        "Hyalonthophagus ?alcyonides", 
+                        "Achant. SP", 
+                        "Aysha Sp.", 
+                        "Aspidosperma SP", 
+                        "Onthophagus Sp.X")
+
+sci_from_looking <- c("Silvestritermes euamignathus", 
+                      "Procornitermes araujoi", 
+                      "Gastridium ventricosum", 
+                      "Copris inhalatus  ssp. santaluciae",
+                      "Setophaga ruticilla", "Aphrohora alni", 
+                      "Miniopterus schreibersii oceanensis", 
+                      "Leptonychia pubescens", "Corymbium CF cymosum", 
+                      "Erica cerinthoides", 
+                      "Rhodocoma fruticosa", "Canthon cyanellus", 
+                      "Phillipsia dominguensis?", "Xylaria scruposa",
+                      "Aptandra  tubicina (Poepp.) Benth. ex Miers.",
+                      "Bocageopsis multiflora (C. Mauritius) R.E. Fries", 
+                      "Inga  bourgonii (Aubl.) DC.", 
+                      "Lacistema  aggregatum (P. J. Bergion) Rusby",
+                      "Sloanea grandiflora Smith", 
+                      "Sloanea yapacanae Steyermark", 
+                      "Swartzia polyphylla DC", 
+                      "Hylaeus (Prosopisteron) \"bicurvatus\" TFH Hylaeinae code",
+                      "Megachile \"carnaua\"",
+                      "Megachile (Austrochile) \"Perth Resin-pot Bee\"",
+                      "Megachile (Hackeriapis) \"parimaculae\" King (unpublished)",
+                      "Chlaenius micans", "Harpalus  suensoni",
+                      "Harpalus crates", "Harpalus davidi Tschitscherine", 
+                      "Lesticus magnus", 
+                      "Rudgea duidae (Standley) Steyermark")
+
+
+#2. Genus names without spaces
+unspaced_genus_names <- 
+  taxa$Taxon_name_entered[taxa$spaced_genus_names == FALSE &
+                            taxa$Resolution_entered == "Genus"]
+have_idae <- grep("idae", unspaced_genus_names, value=TRUE)
+have_aceae <- grep("aceae", unspaced_genus_names, value=TRUE)
+poss_fam <- c(have_idae, have_aceae)
+unspaced_morpho <- grep("[0-9]", unspaced_genus_names, value=TRUE)
+unspaced_fam <- setdiff(poss_fam, unspaced_morpho)
+
+poss_higher <- c(grep("inae$", unspaced_genus_names, value=TRUE),
+                      grep("ini$", unspaced_genus_names, value=TRUE),
+                      grep("INAE$", unspaced_genus_names, value=TRUE),
+                      grep("INI$", unspaced_genus_names, value=TRUE))
+#By inspection, all of poss_higher are subfamilies or tribes.
+
+# Look at the names without spaces not yet classified
+remainder <- setdiff(unspaced_genus_names, c(unspaced_fam, unspaced_morpho, 
+                                             poss_higher))
+
+yes <- grep("_sp", remainder, value=TRUE)
+butno <- grep("_spp", remainder, value=TRUE)
+sp_not_spp <- c(sp_not_spp, setdiff(yes, butno)) #These are morphospecies
+
+# Many of these end _sp so are species, but some end _spp
+
+# Group these sets of species into their correct Resolution_inferred class.
+really_family <- c(fam, unspaced_fam, poss_higher)
+really_scientific <- c(taxa$Taxon_name_entered[taxa$spaced_genus_names==TRUE & taxa$Species != ""],
+                       have_cf, sci_from_looking, "Guasama") # Guasama was a name mis-entered instead of a species name
+really_morphospecies <- unique(c(have_digits, aff, sp_not_spp, morph_from_looking, unspaced_morpho))
+
+# Initialise Resolution_inferred to "Genus" (the default).
+taxa$Resolution_inferred[taxa$Resolution_entered=="Genus"] <- "Genus" 
+
+# Overwrite Resolution_inferred whenever "Genus" is incorrect.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Genus" & taxa$Taxon_name_entered %in% really_morphospecies] <- "Morphospecies"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Genus" & taxa$Taxon_name_entered %in% really_scientific] <- "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Genus" & taxa$Taxon_name_entered %in% really_family] <- "Family"
+
+# Progress update.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+
+```
+
+
+### Family names
+
+441 of the family names have spaces, and therefore need to be inspected. One of them also has a species-level match in COL, so is definitely worth a look. The one with a match is a valid Latin binomial not a family. Many of the others are morphospecies, but some are families (e.g., "Miridae (non Stemodemini)"). Based on looking through the names, I have inferred that names including numbers are actually Morphospecies (as is one other); a few names are Scientific; one is a Genus; and two are "Above family", which was not a category in the original Excel files but which is likely to be helpful given that a number of data sets have Orders as their taxa.
+
+```{r family-names}
+# First, focus on the names with spaces
+taxa$Taxon_name_entered[taxa$spaced_family_names==TRUE]
+to_process <- taxa$Taxon_name_entered[taxa$spaced_family_names==TRUE]
+have_numbers <- grep("[0-9]", to_process, value = TRUE) # Really Morphospecies
+really_scientific <- c("Turdus migratorius", "Aphrodes trifasciatus", 
+                       "Leptaulus daphnoides")
+really_morphospecies <- c("Anoteropsis sp B", have_numbers)
+really_higher <- c("Scarabaeoidea (larvae)", "Scarabaeoidea (adults)")
+really_genus <- c("Hypoponera sp.", "Restionaceae family, CF Hypodiscus", 
+                  "Restionaceae family, CF Restio genus",
+                  "Punctidae spp (Trocholaoma parvissima group)")
+
+# Inspect unclassified names
+setdiff(taxa$Taxon_name_entered[taxa$Resolution_entered == "Family"],
+        c(really_scientific, really_morphospecies, really_higher, really_genus))
+
+#Classify by inspection
+really_morphospecies <- c(really_morphospecies, "Largidae69", "Hym.UK21")
+really_genus <- c(really_genus, "Hym.Apidae.Bombus", "Hym.Apidae.Nomada")
+really_higher <- 
+  c(really_higher, "Collembola", "Isopoda", "Diptera", "Oligochaeta",
+    "Pauropoda", "Psocoptera", "Symphyla", "Araneae", "Chilopoda",
+    "Pseudoscorpionida", "Coleoptera", "Hemiptera", "Thysanoptera", "larva")
+
+# Initialise to Family (the default).
+taxa$Resolution_inferred[taxa$Resolution_entered=="Family"] <- "Family" 
+
+# Overwrite Resolution_inferred whenever Family is incorrect.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Family" & 
+                           taxa$Taxon_name_entered %in% really_scientific] <- 
+  "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Family" & 
+                           taxa$Taxon_name_entered %in% really_morphospecies] <- 
+  "Morphospecies"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Family" & 
+                           taxa$Taxon_name_entered %in% really_genus] <- "Genus"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Family" & 
+                           taxa$Taxon_name_entered %in% really_higher] <- 
+  "Above family"
+
+# Show progress.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+```
+
+
+### Group of species
+
+Names viewed as "Groups of species" include many families but also some genera or sets of species within genera; a few are even scientific names. Although at an earlier stage in code development, I had intended to differentiate between groups of species and taxa above the family level, I no longer see value in doing that, which simplifies the task considerably here.
+
+```{r group-names}
+groups <- taxa$Taxon_name_entered[taxa$Resolution_entered == "Group of species"]
+unique(droplevels(groups)) # Show what we are dealing with.
+
+# Assign them by inspection.
+# 1. Families
+have_idae <- grep("idae", groups, value=TRUE)
+have_aceae <- grep("aceae", groups, value=TRUE)
+poss_fam <- c(have_idae, have_aceae)
+not_fam <- c(grep(" lato", poss_fam, value=TRUE), grep("-like", poss_fam, 
+                                                       value=TRUE))
+not_fam <- c(not_fam, "Apidae sensu latu",
+             "Dauer Larvae (Diplogasteridae/Rhabditidae)") # By inspection.
+fam <- setdiff(poss_fam, not_fam)
+fam <- c(fam, "Other Syrphidae", "Other Bumbelbees",
+         "Hoverflies total", "Enchytraeid", "OCCISORINI spp.","CLAMBIDAE spp.", "Rabbits", "Picoides leucotos, P. major, and Picus awokera",
+                  "Mitella diphylla and Tiarella cordifolia", "Larvae Staphylininae")
+really_family <- fam
+
+#2. Morphospecies
+have_digits <- grep("[0-9]", groups, value=TRUE) #These are morphospecies
+end_sp_stop <- grep(" sp\\.", groups, value=TRUE) #Morphospecies
+really_morphospecies <- c(have_digits, end_sp_stop)
+
+#3. Genera
+end_us <- grep("us$", groups, value=TRUE) # These are genera, even the mononchids.
+really_genus <- c(end_us, "Bombus lucorum aggregate", "Bombus terrestris-lucorum complex", "Anguina", "Heterodera juv", "Meloidogyne juv",
+                  "Chalepogenus caerulens y clypeolatus", "Psithyrus species total", "Criconemoides", "Ogma", "Hemicycliophora", 
+                  "Aphelenchoides", "Seinura", "Diplogaster", "Teratorhabditis", "Eurystomina", "Acrobeles", "Acrobeloides",
+                  "Stegellata", "Pakira", "Wilsonema", "Monhystera", "Tripyla", "Mesodorylaimus (off)", "Labronema", "Xiphinema",
+                  "Sectonema", "Falcihasta", "Doryllium", "Diphtherophora", "Bunonema", "Tmetolophota spp. Complex", "Citrus spp",
+                  "Cordia spp", "Miconia spp", "Myrcia spp", "Salix spp", "Acmaeoderella  spp","Agrostis spp.", "Betula spp.",
+                  "Epilobium spp.", "Populus spp.", "Cis spp.", "Bicava spp.", "Scaptomyza spp.", "Zealandoberis spp.", "Trioza spp.",
+                  "Aphanogmus spp.", "Trichopria spp.", "Kleidotoma spp.", "Baeus spp.", "Odontacolus spp.", "Trimorus spp.", "Trissolcus spp.",
+                  "Amanita spp.  unidentified", "Common Rustic agg.", "Actaea alba and A. rubra", "Circaea lutetiana and C. alpina", 
+                  "Galium circaezans and G. lanceolatum", "Impatiens capensis and I. pallida", "Ormorhiza claytonii and O. longistylis",
+                  "Prenanthes altissima and P. alba", "Viola spp, not stemmed", "Viola spp, stemmed", "Trichoniscus pusillus agg.",
+                  "Cis spp.", "Forelius mccooki / pruinosus")
+
+
+#4. Scientific names
+really_scientific <- c("Trichoniscus pusillus s.s.", "Canthon mutabilis", 
+                       "Amauroderma omphalodes")
+
+sorted <- c(really_family, really_genus, really_scientific, 
+            really_morphospecies)
+
+cat("Really scientific:\n")
+really_scientific
+cat("\nReally morphospecies:\n")
+really_morphospecies
+cat("\nReally genera:\n")
+really_genus
+cat("\nReally families:\n")
+really_family
+cat("\nReally above family:\n")
+setdiff(groups, sorted)
+
+#Initialise Resolution_inferred to Above family (the default)
+taxa$Resolution_inferred[taxa$Resolution_entered=="Group of species"] <- 
+  "Above family" 
+
+# Overwrite Resolution_inferred whenever it should be more precise.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Group of species" & 
+                           taxa$Taxon_name_entered %in% really_morphospecies] <- 
+  "Morphospecies"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Group of species" & 
+                           taxa$Taxon_name_entered %in% really_scientific] <- 
+  "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Group of species" & 
+                           taxa$Taxon_name_entered %in% really_family] <- 
+  "Family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Group of species" & 
+                           taxa$Taxon_name_entered %in% really_genus] <- "Genus"
+
+# Show progress.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+
+```
+
+### Morphospecies
+
+1656 names categorised as morphospecies do not have spaces. I scrutinised these.
+
+By inspection, these are overwhelmingly OK. There are a couple of subfamily names in here, e.g., "Eulophinae"; and some that might be species, e.g., "Pedaliodes_prax"; but very few appear suspicious.
+
+Considering just those names in this list that do not have any numbers would highlight any few that could usefully be changed.
+
+```{r morpho-names}
+#1. Names with spaces
+cat("\nSample of 100 morphospecies names that do contain spaces\n")
+sample(taxa$Taxon_name_entered[taxa$Resolution_entered=="Morphospecies" & 
+                                 taxa$unspaced_morphosp_names==FALSE],100)
+# By inspection, these are more or less all morphospecies or scientific names.
+
+#2. Names without spaces
+cat("\nSample of 100 morphospecies names that do not contain spaces\n")
+sample(taxa$Taxon_name_entered[taxa$Resolution_entered=="Morphospecies" & 
+                                 taxa$unspaced_morphosp_names==TRUE],100)
+# These also all look fine.
+
+# More systematic look for badges of quality.
+case_names <- taxa$Taxon_name_entered[taxa$unspaced_morphosp_names]
+
+# Two rules of thumb: names ending in digits, or with underscores, all look to
+# be morphospecies.
+end_digit <- grep("[0-9]$", case_names, value=TRUE) #All are morphospecies
+has_underscore <- grep("_", case_names, value=TRUE) #All are morphospecies
+really_morphospecies <- unique(c(end_digit, has_underscore))
+
+# Code other Resolution_inferred classes by inspection.
+really_uncertain <- "Unknown"
+really_genus <- c("Bumblebee")
+really_family <- c("Campopleginae","Eulophinae","Fanniidae","Latridiidae")
+
+setdiff(case_names, c(really_morphospecies, really_uncertain, really_genus, 
+                      really_family)) # These appear all to be morphospecies.
+
+#Now populate Resolution_inferred; Morphospecies as the default to start with.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Morphospecies"] <- 
+  "Morphospecies"
+
+# Overwrite Resolution_inferred whenever needed.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Morphospecies" & taxa$Taxon_name_entered %in% really_uncertain] <- "Uncertain"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Morphospecies" & taxa$Taxon_name_entered %in% really_family] <- "Family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Morphospecies" & taxa$Taxon_name_entered %in% really_genus] <- "Genus"
+
+# Show progress.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+
+```
+
+
+### Uncertain
+3647 names have Uncertain resolution. Inspection showed that many of these are morphospecies, but also that cases were strongly concentrated in particular studies. Therefore the strategy has been to assess the studies that contributed many cases, using the Curate screen in the database as well as referring where necessary to the original publication. Remaining cases were inspected for programmable general rules and the residue hard-coded.
+
+```{r uncertain}
+case_names <- unique(taxa$Taxon_name_entered[taxa$uncertain_names])
+
+head(rev(sort(table(taxa$SS[taxa$Resolution_entered=="Uncertain"]))), 50)
+# I went through these in descending order until I reached studies with only ~3 
+# uncertain names, after which I switched to the overall set of remaining cases.
+
+#Going back to the Curate screens and where necessary the papers suggests the following
+morph_SS <- c("AR1_2008__Basset 1", "HP1_2006__Lachat 1", "HP1_2007__Bos 1", "AD1_2013__Grass 1", "AD1_2002__Vazquez 1",
+              "CM2_2012__Cicuzza 3", "CM2_2012__Cicuzza 2", "CM2_2012__Cicuzza 1", "HW1_2006__Summerville 1", "AD1_2011__Schuepp 1",
+              "AD1_2010__Quintero 1", "HP1_2009__Kessler 1", "HP1_2009__Hylander 3", "AD1_2011b_Hanley 1", "SH1_2001__Floren 1",
+              "DL1_2012__Hernandez 1", "KS1_2012__Alguacil 1", "KS1_2006__Borges", "CM2_2012__Sambuichi 1", "CM2_2007__Sambuichi 1",
+              "AD1_2013__Chima 1", "AD2_2017__Novais 2", "KS1_2005__Schilthuizen 1", "SH1_2013__Norfolk 1", "DL1_2012__Hernandez 2",
+              "AD1_2006__Blanche 2", "AD1_2006__Blanche 1", "AD1_2013__Grass 2", "GP1_2011__Freire 1", "BS1_2014__Torre 1",
+              "AD1_2011__Tonietto 1", "AD1_2011__Richards 1", "AD1_2011__Richards 2", "AD1_2011__Richards 3", "AD1_2009__Vergara 1",
+              "MJ1_2008__Munyekenye 1", "AD1_2008__Billeter 5", "AD1_2008__Billeter 6", "HP1_2010__Krauss 4", "BS1_2009__Firincioglu 1",
+              "AD1_2008__Billeter 2", "AD1_2008__Billeter 8", "AD1_2008__Billeter 9", "AD1_2008__Billeter 14", "AD1_2008__Kwaiser 2",
+              "CM1_2010__Berry 1", "CM1_2010__Berry 2")
+sci_SS <- c("YP1_2011__Wang 1", "HP1_2007__Shahabuddin 1", "GP1_2013__Breedt 1")
+higher_SS <- c("MH1_2009__Turner 1", "MJ1_2010__Haarmeyer 1")
+genus_SS <- c("AD1_2007__Meyer 1")
+
+fixed_SS <- c(morph_SS, sci_SS, higher_SS, genus_SS)
+fixed_cases <- taxa$Taxon_name_entered[taxa$SS %in% fixed_SS & 
+                                         taxa$uncertain_names==TRUE]
+case_names <- setdiff(case_names, fixed_cases)
+case_names # See what remains.
+
+# Inspection of what remains suggests these rules are generally applicable:
+really_higher <- c("Tree/Shrubs >20cm GBH", "Trees/Shrubs >1m tall <20cm GBH")
+has_digit <- setdiff(grep("[0-9]", case_names, value=TRUE), really_higher) #All are morphospecies
+has_sp_stop <- grep("sp\\.", case_names, value=TRUE) #All are morphospecies
+ends_sp <- grep("sp$", case_names, value=TRUE) #All are morphospecies
+
+# Now deal with residual cases by inspection (still looking at Curate screen where needed)
+really_morphospecies <- c(has_digit, has_sp_stop, ends_sp, "Tiny red flower", 
+                          "Gull or pioneer (unable to id in flight)", "HerbA")
+really_common <- c("Short banded sailer ?", "Tamil yeoman ?", "Orangutan nests")
+really_scientific <- c("Bombus lucorum (?)", "Rhipidura leucophrys leucophrys", 
+                       "Aethomys chrysophilus", "Canthon juvencus", 
+                       "Lasioglossum (Dialictus) albipennis?", "ALFC")
+really_genus <- c("Auglochlorini/Agapostemon", "Andrena aff minutula", 
+                  "Cheilosia vernalis ??", "Bombus muscorum/pascuorum", 
+                  "Bombus terrestris/lucorum",
+                  "Bombus lucorum/terrestris", "Magneuptychia ca. analis", 
+                  "Taygetis ca. xenana", "Ptychadena aff. aequiplicata", 
+                  "Eupithecia? aff. petersi",
+                  "Octostruma wheeleri???", "Solenopsis amblychila?", 
+                  "Pheidole clementensis?", "Neivamyrmex nigrescens?")
+really_family <- c("Anthaxia/Paratassa", "Uid hesperids", "Uid lycaenids")
+really_higher <- c(really_higher, "Blattoptera", "Other insects", "Rodent", 
+                   "Raptor", "Larvae ?Salpingidae")
+really_uncertain <- 
+  setdiff(case_names, c(has_digit, has_sp_stop, ends_sp, really_scientific,
+                        really_morphospecies, really_common, really_genus,
+                        really_family, really_higher))
+
+# Put the Resolution_inferred into the data frame, starting with Study-level
+# decisions...
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           taxa$SS %in% morph_SS] <- "Morphospecies"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           taxa$SS %in% sci_SS] <- "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           taxa$SS %in% higher_SS] <- "Above family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           taxa$SS %in% genus_SS] <- "Genus"
+
+# ... and continuing to the name-level decisions.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_morphospecies] <- 
+  "Morphospecies"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_common] <- 
+  "Common name"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_scientific] <- 
+  "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_genus] <- "Genus"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_family] <- 
+  "Family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_higher] <- 
+  "Above family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Uncertain" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_uncertain] <- 
+  "Uncertain"
+
+print(sum(taxa$Resolution_inferred=="Uncertain", na.rm = TRUE))
+
+# Report on progress.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+```
+
+### Scientific
+
+There are 64393 scientific names. Over two thirds are matched to a species on COL, validating that they are indeed Scientific. But nearly 17,000 are not matched -- too many to inspect fully. The approach has therefore been to develop rules of thumb allowing names to be categorised into a Resolution_inferred, and to test these rules by inspection of all cases affected or, if there are very many, a random sample of 100. (In practice, multiple random samples have been inspected in such cases.)
+
+
+
+```{r sci-names}
+# Names matching COL at the species level are scientific.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           taxa$Match==TRUE] <- "Scientific" #43685 - over 2/3.
+
+# Get the names we are trying to categorise.
+case_names <- 
+  unique(taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & 
+                                   is.na(taxa$Resolution_inferred)]) # 16674.
+length(case_names)
+
+# Short-cuts to identify morphospecies.
+has_us_digit <- grep("_[0-9]_", case_names, value=TRUE) #All are morphospecies 
+has_digit <- grep("[0-9]", case_names, value=TRUE) #Most are morphospecies but some have years...
+have_year <- grep("[0-9][0-9][0-9][0-9]", case_names, value=TRUE) # ... so pull out the years
+likely_num <- setdiff(has_digit, have_year) # ... and keep the difference
+
+has_spdigit <- c(grep("sp[0-9]", ignore.case=TRUE, case_names, value=TRUE), 
+                 grep("sp [0-9]", ignore.case=TRUE, case_names, value=TRUE)) #Still some of these
+
+has_sp_stop <- grep("sp\\.", ignore.case=TRUE, case_names, value=TRUE) #All are morphospecies
+
+ends_sp <- setdiff(c(grep("sp$", ignore.case=TRUE, case_names, value=TRUE), 
+                     grep(" sp$", ignore.case=TRUE, case_names, value=TRUE), 
+                     grep("_sp$", ignore.case=TRUE, case_names, value=TRUE), 
+                     grep("\\.sp$", ignore.case=TRUE, case_names, value=TRUE)), 
+                   c("Vesp", "wasp")) #All are morphospecies
+
+cat("\nSample of 100 putative morphospecies proposed on basis of a non-year number:\n")
+head(sample(likely_num), 100) #2924 of these
+cat("\nSample of 100 putative morphospecies proposed on basis of containing <sp.>:\n")
+head(sample(has_sp_stop),100) #3738 of these
+
+ends_sp # Only 177 so look at them all
+
+# Curate oddities seen in the sample, whether one-offs or names with "subsp"
+odd_but_scientific <- c("Rubus idaeus=VLOOKUP(A165,Species!A:B,2,FALSE)", 
+                        grep("subsp", case_names, value=TRUE))
+
+really_morphospecies <- setdiff(unique(c(has_us_digit, likely_num, has_spdigit, 
+                                         has_sp_stop, ends_sp)),
+                                odd_but_scientific)
+
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_morphospecies] <- 
+  "Morphospecies"
+
+# What is left?
+case_names <- taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & 
+                                        is.na(taxa$Resolution_inferred)]
+length(case_names)
+
+# Programmatic identification of names best viewed as genera, families or higher taxa (plus hard-coded names from inspection)
+is_agg <- c(grep("agg\\.", ignore.case=TRUE, case_names, value=TRUE), 
+            grep("agg$", case_names, value=TRUE), 
+            grep("aggregate", case_names, value=TRUE)) # Best viewed as a genus
+has_us_sp_us <- grep("_sp_", ignore.case=TRUE, case_names, value=TRUE) # Both are genera
+has_spp <- grep("spp", case_names, ignore.case = TRUE, value=TRUE)
+has_species <- grep("species", case_names, ignore.case = TRUE, value = TRUE) #All are genera
+
+ends_larva <- c(grep("larva$", ignore.case=TRUE, case_names, value=TRUE), 
+                grep("larvae$", ignore.case=TRUE, case_names, value=TRUE))
+genus_larva <- "Costelytra larva"
+family_larva <- c("Cocclarva", "Chrylarva","Curculionidae larvae",
+                  "Dermestidae larvae","Staphylinidae larvae")
+higher_larva <- c("Diptera larva","Thrips larva","Insect larvae",
+                  "Lepidoptera larvae", "Coleoptera Larva", "Larvae")
+setdiff(ends_larva, c(genus_larva, family_larva, higher_larva)) #All scientific.
+
+ends_adult <- c(grep("adult$", ignore.case=TRUE, case_names, value=TRUE), 
+                grep("adults$", ignore.case=TRUE, case_names, value=TRUE)) #Families
+ends_adult #Only ChryAdult is family; rest are higher
+family_adult <- "ChryAdult"
+higher_adult <- "Coleoptera Adult"
+
+end_idae <- grep("idae$", ignore.case=TRUE, case_names, value=TRUE)
+end_aceae <- grep("aceae$", ignore.case=TRUE, case_names, value=TRUE)
+is_family <- c(end_idae, end_aceae) # These are families
+
+really_genus <- c(is_agg, has_us_sp_us, has_spp, has_species, genus_larva, 
+                  "Dryopteris", "Geranium", "Fuschia", "Acamas", "Vicrama", 
+                  "Disoxylon", "Allograpta_spp.",
+                  "Lariscus_Spp", "Artogoss", "Buckupiella", "Grondlelie")
+really_family <- c(is_family, family_larva, family_adult, "Amaurobioidinae", 
+                   "Restio/Ischyrolepsis")
+really_higher <- c(higher_larva, higher_adult, "云南蝗", "Unidentified", 
+                   "Larve_Diptera", "Gastropoda")
+
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_genus] <- "Genus"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_family] <- 
+  "Family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% really_higher] <- 
+  "Above family"
+
+# What is left?
+case_names <- taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & 
+                                        is.na(taxa$Resolution_inferred)] #15701 to go
+length(case_names)
+
+# By inspection, the names with spaces look to be scientific
+length(grep(" ", case_names, value=TRUE)) # Number of names left with spaces.
+has_space <- grep(" ", case_names, value=TRUE)
+cat("\nBy inspection, names with spaces are always species and overwhelmingly scientific names (random sample of 100 shown):\n")
+sample(has_space, 100)
+no_space <- setdiff(case_names, has_space)
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$Taxon_name_entered %in% has_space] <- 
+  "Scientific"
+
+# What is left?
+case_names <- taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & 
+                                        is.na(taxa$Resolution_inferred)] 
+length(case_names) #910
+
+# Are they clustered by SS?
+cat("\nThe 50 studies with most scientific names remaining to be decided are:\n")
+head(rev(sort(table(taxa$SS[taxa$Resolution_entered=="Scientific" & 
+                              taxa$Taxon_name_entered %in% no_space]))), 50)
+
+#Going through in descending order, but checking all the studies within each source while I'm there (using the Curate screen and, where needed, the paper)
+sci_SS <- c("GN1_2017__LopezRicaurte 1", "CM1_2012__Katovai 1", 
+            "VK1_2012__Noreika 1", "HP1_2014__Gray 1", "LH2_2015__Leong 1", 
+            "AD1_2013__Chima 1",
+            "YP1_2004__Gu 1", "JB3_2019__Baudron 1", "SE1_2012__Rey 1", 
+            "AD1_2011__Power 2", "AD1_2011__Peer 1", "CM1_2010__Berry 1", 
+            "CM1_2010__Berry 2",
+            "MG1_2005__Vanbergen 1", "CC1_2013__Litchwark 1", 
+            "SH1_2013__Norfolk 1", "DI1_2013__Rousseau")
+higher_SS <- c("LC1_2015__Su 1", "SH1_2011__Todd 1", "LC1_2020__Ma 1", 
+               "LC1_2019__Luan 1", "VB1_2012__Carpenter 1", 
+               "VB1_2012__Carpenter 2",
+               "VB1_2012__Carpenter 2", "VB1_2012__Carpenter 6", 
+               "VB1_2012__Carpenter 7", "VB1_2012__Carpenter 8", 
+               "HZ1_2009__McShea 1", 
+               "VB1_2005__Eggleton 1", "LC1_2021__Ge 1", 
+               "GP1_2009__Vasconcelos 2", "LC1_2015__Yang 1", 
+               "SH1_2014__Walker 3", "SR1_2016__Franco 1")
+family_SS <- c("LC1_2015__Hou 1", "LC1_2021__Zang 1", "LC1_2018__Guo 1")
+genus_SS <- c("VK1_2011__Legare 1", "VK1_2011__Legare 2", "MH1_2010__CATIE 2", 
+              "LC1_2006__Li 2", "BS1_2010__Page 1", "YY1_2018__Guillemot", 
+              "DL1_2012__CalvinoCancela 1",
+              "YY1_2009__Selwyn 1")
+morph_SS <- c("SH1_2013__CIFORphilippines 1", "SH1_2013__CIFORphilippines 2", 
+              "AD2_2019__deOliveira 1")
+
+# Assign Resolution_inferred based on this study-level inspection.
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$SS %in% sci_SS] <- "Scientific"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$SS %in% higher_SS] <- "Above family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$SS %in% family_SS] <- "Family"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$SS %in% genus_SS] <- "Genus"
+taxa$Resolution_inferred[taxa$Resolution_entered=="Scientific" & 
+                           is.na(taxa$Resolution_inferred) & 
+                           taxa$SS %in% morph_SS] <- "Morphospecies"
+
+# What's left?
+case_names <- taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & is.na(taxa$Resolution_inferred)] 
+length(case_names) # 92 remaining.
+
+# All resolved by inspection, including the curation pages.
+sp <- c("Callistus_lunatus", "E.rufifrons", "Acrobeles.complexus", 
+        "Delichon urbicum", "GRJA", "MUNTJAC", "Carduelis-chloris",
+        "Tringa glareola", "Hylaeus†(Prosopisteron)†vittatifrons",
+        "Xanthesma†(Xenohesma)†perpulchra")
+ge <- c("Cacoxennis", "Lasioglossum",
+        "AMARspec", # In the genus Amara.
+        "Clusia", "Adiantum", "Sphenomorphus", "Galium", "Hipposideros",
+        "Ochetomyrmex", "Polionemobius", "Myotis", "Salvia", "Tetrastigma",
+        "Lyriothemis", "Buphthalmum", "Typhochrestus", "Eucalyptus", "Solanum")
+fa <- c("Arnebia/Anchusa", "civet", "Aleocharinae", "Phellinus/Inonotus",
+        "Formacine")
+hi <- c("Tricladida", # Order of flatworms.
+        "lepidoptera",
+        "Desconocido", # Translates as "unknown"...
+        "DiplopodaB", "Unknown", "Chiroptera", "Odonata", "Blattaria",
+        "Orthoptera", "Homoptera", "Hemiptera", "Neuroptera", "Coleoptera", 
+        "Diptera", "Lepidoptera", "Hymenoptera", "Raptor", 
+        "kosong", # Translates as "nothing"...
+        "Opiliones", "HEMIPTERA", "COLEOPTERA", "OLIGOCHAETA", "ISOPTERA",
+        "ARANAE", "Isoptera", "Dermaptera", "Blattodea",
+        "Chilopoda", "Diplopoda", "Araneae", "Mesostigmata", 
+        "Collembola", "Thysanoptera", "Psocoptera", "Plecoptera", "Neuoptera",
+        "Trichoptera", "Mecoptera", "Siphonaptera")
+
+taxa$Resolution_inferred[taxa$Taxon_name_entered %in% case_names & 
+                           taxa$Taxon_name_entered %in% sp] <- "Scientific"
+taxa$Resolution_inferred[taxa$Taxon_name_entered %in% case_names & 
+                           taxa$Taxon_name_entered %in% ge] <- "Genus"
+taxa$Resolution_inferred[taxa$Taxon_name_entered %in% case_names & 
+                           taxa$Taxon_name_entered %in% fa] <- "Family"
+taxa$Resolution_inferred[taxa$Taxon_name_entered %in% case_names & 
+                           taxa$Taxon_name_entered %in% hi] <- "Above family"
+
+# Show results.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+sum(table(taxa$Resolution_entered, taxa$Resolution_inferred))
+sum(is.na(taxa$Resolution_inferred))
+
+# What's left?
+case_names <- taxa$Taxon_name_entered[taxa$Resolution_entered=="Scientific" & 
+                                        is.na(taxa$Resolution_inferred)]
+length(case_names) # 2 - these only persist for some weird reason, as their
+# solutions have been hard-coded above.
+
+# Show progress.
+table(taxa$Resolution_entered, taxa$Resolution_inferred)
+
+# Calculate the PrecisionScore for each name.
+taxa$isSpecies <- taxa$Resolution_inferred %in% c("Common name", "Morphospecies", "Scientific")
+taxa$isGenus <- taxa$Resolution_inferred == "Genus"
+taxa$isFamily <- taxa$Resolution_inferred == "Family"
+taxa$isHigher <- taxa$Resolution_inferred %in% c("Above family", "Uncertain")
+taxa$PrecisionScore <- NA
+taxa$PrecisionScore[taxa$isSpecies==TRUE] <- 4
+taxa$PrecisionScore[taxa$isGenus==TRUE] <- 3
+taxa$PrecisionScore[taxa$isFamily==TRUE] <- 2
+taxa$PrecisionScore[taxa$isHigher==TRUE] <- 1
+
+# Drop a bunch of unhelpful/unnecessary columns.
+curated <- subset(taxa, select = -c(Space, Match, unmatched_common_names, spaced_family_names, spaced_genus_names, matched_genus_names, 
+                                    unspaced_morphosp_names, unspaced_sci_names, uncertain_names))
+
+# Add attributes for provenance.
+attr(curated, which = "when_created") <- Sys.time()
+attr(curated, which = "taxa_file") <- filenames$taxa_file
+
+# Save data frame as an rds.
+saveRDS(curated, file.path("output", filenames$output_file))
+
+```
+
+## Summarise by study
+The table below shows, for each study, the number of taxa, the number at each resolution and the mean "PrecisionScore" of its taxa.
+```{r tabulate-results}
+mean.score <- tapply(taxa$PrecisionScore, taxa$SS, FUN="mean")
+n.taxa <- table(taxa$SS)
+spp <- tapply(taxa$isSpecies, taxa$SS, FUN="sum")
+gen <- tapply(taxa$isGenus, taxa$SS, FUN="sum")
+fam <- tapply(taxa$isFamily, taxa$SS, FUN="sum")
+hig <- tapply(taxa$isHigher, taxa$SS, FUN="sum")
+unc <- tapply(taxa$uncertain_names, taxa$SS, FUN="sum")
+hist(mean.score)
+plot(jitter(mean.score) ~ jitter(as.numeric(n.taxa)), log="x", xlab="Number of taxa in study", ylab="Study mean taxonomic precision score", pch=19)
+overview <- data.frame(SS=names(mean.score), n.taxa=as.numeric(n.taxa), mean.score=as.numeric(mean.score), species=as.numeric(spp),
+                       genus=as.numeric(gen), family=as.numeric(fam), higher=as.numeric(fam), uncertain=as.numeric(unc))
+knitr::kable(overview)
+
+# Add attributes for provenance.
+attr(overview, which = "when_created") <- Sys.time()
+attr(overview, which = "taxa_file") <- filenames$taxa_file
+
+saveRDS(overview, file.path("output", filenames$overview_file))
+```
