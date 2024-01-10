@@ -185,7 +185,7 @@ correct_for_sampling_effort <- function(data, verbose = TRUE){
     # Now let's create the effort-corrected measurement by dividing the
     # abundances by the sampling efforts.
     mutate(Corrected_sampling_effort = Sampling_effort/max_sample_effort,
-        Effort_corrected_measurement = Measurement * Corrected_sampling_effort) 
+        Effort_corrected_measurement = Measurement/DividingEffort) 
   
   # Summarise the corrected sampling efforts.
   if (verbose == TRUE){
