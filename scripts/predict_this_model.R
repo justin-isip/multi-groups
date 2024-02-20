@@ -11,13 +11,14 @@ predict_this_model <- function(model, order, percentage_diff, baseline, add_prim
   
   # pull out effects
   effects <- effects %>%
-    slice(1:8)
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   effects$term <- recode_factor(effects$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
+                                "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
                                 "Predominant_land_useCropland" = "Cropland",
@@ -62,7 +63,7 @@ predict_this_model <- function(model, order, percentage_diff, baseline, add_prim
       effects[1,6] <- 0 #shift lower 
     }
     if(baseline == "percentage"){
-      # Use this when you've not set primary to zero and are looking on the percentage difference scale
+      # Use this when you've set primary to zero and are looking on the percentage difference scale
       effects[1,7] <- 0 #shift median
       effects[1,8] <- 0 #shift upper
       effects[1,9] <- 0 #shift lower 
