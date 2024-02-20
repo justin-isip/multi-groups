@@ -29,3 +29,5 @@ vignettes/*.pdf
 # desktop service files
 .DS_Store
 .RDataTmp2
+one_example.html
+.RDataTmp
