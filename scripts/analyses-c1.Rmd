@@ -10,23 +10,21 @@ editor_options:
 
 # This Rmd does a series of different manipulations for my 1st chapter.
 
-##%######################################################%## \# \# \####
-This Rmd checks the latest diversity extract (14th \#### \####
-September) for Victorias 5 \#### \#### additional studies in the \####
-\#### New Forest (same sets of sites) to see \#### \#### if they are
-multi-taxa \#### \#### and suitable for my analysis. \#### \# \#
-##%######################################################%##
+
+# First, I'm going to check the latest diversity extract (14th Sep 23) for Victorias 5 additional studies in the New Forest to see if they are suitable
+# for my analysis
+
 
 # Read in the data
 
 ```{r}
 # LATEST DIV EXTRACT
-diversity <- readRDS("./data/diversity-2023-09-14-02-33-21.rds")
+diversity <- readRDS("../data/diversity-2023-09-14-02-33-21.rds")
 
 library(tidyverse)
 ```
 
-# Victoria added 5 extra studies which AP mentioned, lets extract them and have a look
+# Lets extract VB studies
 
 ```{r}
 
@@ -38,17 +36,15 @@ diversity %>%
   unique %>% 
   View() 
 
-# Here they are 
+# Some instances of larvae
+# Yes, they all contain multiple groups!
+
+# Here they are:
 # VB1_2020__Burton 1
 # VB1_2020__Burton 2
 # VB1_2020__Burton 3
 # VB1_2020__Burton 4
 # VB1_2020__Burton 5
-
-# Find her studies
-# diversity %>% filter(SS %in% c("VB1_2020__Burton 1", "VB1_2020__Burton 2", "VB1_2020__Burton 3", "VB1_2020__Burton 4", "VB1_2020__Burton 5")) %>% 
-#  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  
-#  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Best_guess_binomial, Parsed_name, Order, Genus, Species, Sampling_method) %>% unique() %>% View()
 ```
 
 # Next I want to analyse a spreadsheet sent by Andrew, which has data gathered during the expert elicitation process. It contains the sampling methods selected by experts for their order(s) of interest, I want to see if there are a set of optimal methods for each of the orders I am analysing using PREDICTS.
@@ -60,7 +56,7 @@ diversity %>%
 # Read in the data from Andrew
 
 ```{r}
-experts <- read.csv("./data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  ")) # add NAs for empty values
+experts <- read.csv("../data/bladon_sampling_methods.csv", stringsAsFactors = T, na.strings = c("", " ", "  ")) # add NAs for empty values
 ```
 
 # Have a look at the data
@@ -89,12 +85,12 @@ experts %>%
   arrange(desc(n)) %>% 
   View()
 
+experts %>% filter(SUBSET.I == "Formicidae") %>%  View()
+experts %>% filter(ORDER == "Hymenoptera") %>%  View()
 ```
 
-##%######################################################%## 
-Taxonomic precision for each study  x order combination in my
-dataset 
-##%######################################################%##
+
+# Taxonomic precision for each study  x order combination in my dataset
 
 # This Rmd also uses the CuratedTaxonomicResolution.rds which has the taxonomic precision score for each of the values in the taxon_name_entered column,
 
@@ -108,9 +104,10 @@ dataset
 
 # Precision score = 4, sp level.
 
+# Read in the data
 ```{r}
 # LATEST VERSION OF CURATED TAXON RESOLUTION 
-taxa <- readRDS("./data/CuratedTaxonResolution.rds") # his contains the precision scores for the latest diversity extract 
+taxa <- readRDS("../data/CuratedTaxonResolution.rds") # his contains the precision scores for the latest diversity extract 
 
 str(taxa)
 
@@ -136,20 +133,21 @@ diversity <- correct_for_sampling_effort(diversity) # correct for sampling effor
 print(summarise_diversity(diversity)) # quick summary
 ```
 
-### Merge sites
+# Merge sites
 
 ```{r}
 merged <- merge_sites(diversity, verbose = TRUE) 
 ```
 
-# Filter merged for five orders of interest and then subset for studies that look at more than one of those orders simultaneously
+
+# First, I will find the studies which contain multiple insect groups at the source level. The idea being that some sources may contain separate studies with different sampling methods for different orders. For example within a source, study 1 = visual survey for leps, study 2 = pitfall traps for beetles, study 3 = malaise traps for Hymenoptera, but some of these separate studies would have been conducted at the SAME set of sites, under the same conditions and in the same way and therefore are still precisely matched and suitable data for my analysis. I may be missing data which has multiple orders at the source level but not at the study level, and this data would not be extracted if I subset at the study level. 
 
 ```{r}
-five_orders <-
-  merged %>%
+
+# Subset multiple orders at the source level
+source_multiple <- merged %>% 
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
-  # filter here for the orders of interest so that when we group by study, we are only looking at studies that observe those five orders
-  group_by(SS) %>% # group by SS
+  group_by(Source_ID) %>%  
   mutate(
     Multiple_groups = 
       case_when(
@@ -157,6 +155,515 @@ five_orders <-
         (length(unique(Higher_taxon))) == 1 ~ "NO")) %>%  
   filter(Multiple_groups == "YES") %>% 
   droplevels()
+
+# Subset multiple orders at the study level
+ss_multiple <- merged %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
+  group_by(SS) %>%  
+  mutate(
+    Multiple_groups = 
+      case_when(
+        (length(unique(Higher_taxon))) > 1 ~ "YES",
+        (length(unique(Higher_taxon))) == 1 ~ "NO")) %>%  
+  filter(Multiple_groups == "YES") %>% 
+  droplevels()
+
+# How many studies?
+length(unique(source_multiple$SS)) # source level = 151
+length(unique(ss_multiple$SS)) # study level = 103
+
+# Have a look at multiple orders sampled at the source level
+source_multiple %>% dplyr::select(Source_ID, SS, Order, Sampling_method, Site_name, Habitat_as_described) %>% unique() %>% View()
+
+# We can see that AD1_2002__Kruess 2 only samples Hymenoptera via sweep net, and so doesn't contain multiple groups at the study level, however the sampling takes place at the SAME set of sites and the SAME habitats, and therefore can be used in my analysis.
+
+# Which data is subset at the source level but not at the study level?
+
+source_only <- anti_join(source_multiple, ss_multiple, by = c("Source_ID", "SS", "Order", "Sampling_method", "Site_name", "Habitat_as_described", "Latitude", "Longitude")) # matching based on EXACT SAME site_name, habitat_as_described and lat/long coordinates!
+
+source_only %>% dplyr::select(Source_ID, SS, Order, Site_name, Habitat_as_described, Latitude, Longitude) %>% View()
+
+# Simplify source level df for merging
+source_only <- source_only %>%
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described),
+         lat_long_combo = paste(Latitude, Longitude)) %>% # Concatenate site and habitat_as_described
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo, lat_long_combo) %>% # Select the columns of interest
+  unique()
+  
+# Simplify the study level df for merging
+studies_only <- ss_multiple %>%
+  mutate(site_habitat_combo = paste(Site_name, Habitat_as_described),
+         lat_long_combo = paste(Latitude, Longitude)) %>% # Concatenates 'Site_name' and 'Habitat_as_described'
+  dplyr::select(Source_ID, SS, Order, Sampling_method, site_habitat_combo, lat_long_combo) %>%
+  unique()
+
+# Merge the studies_only df and source_only df only by rows that have an EXACT MATCH in their values for site_habitat_combo (i.e have the EXACT same sites and habitats)
+same_site_habitat <- inner_join(studies_only, source_only, by = c("site_habitat_combo", "lat_long_combo")) 
+
+# SS.x is subset at study level, SS.y is at the source level, here we can see which site x habitat combos match 
+same_site_habitat %>% dplyr::select(SS.x, Order.x, Sampling_method.x, site_habitat_combo, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
+
+# the 10 additional studies subset at the source level 
+same_site_habitat %>% dplyr::select(Source_ID.y, SS.y, Order.y, Sampling_method.y) %>% unique() %>% View()
+
+# Check there's no missing lat/long or site/habitat data
+sum(is.na(studies_only$lat_long_combo))
+sum(is.na(source_only$site_habitat_combo))
+
+# The unique studies in this column are the studies which have the EXACT same sites and habitats 
+data2add <- unique(same_site_habitat$SS.y) %>% droplevels()
+print(data2add)
+
+rm(same_site_habitat, source_only, studies_only)
+```
+
+# Merge source level data with study level data
+
+```{r}
+# Filter for those additional studies subset at source level
+source_multiple <- source_multiple %>% filter(SS %in% data2add) %>% droplevels() 
+
+# Check its pulled the right studies
+source_multiple %>% select(Source_ID, SS) %>% unique() %>% View()
+
+# Merge the additional 10 studies subset at the source level to the dataset subset at the study level
+overall <- rbind(source_multiple, ss_multiple) 
+
+# Check
+length(unique(source_multiple$SS))
+length(unique(ss_multiple$SS))
+length(unique(overall$SS)) # 113 studies overall
+
+rm(source_multiple, ss_multiple)
+```
+
+# Now that I have my overall dataset (with multiple groups subset at the source and study level), I will update the sampling methods for a number of studies based on checking the source publication. The idea being that some studies in my dataset have an obscure/unspecified sampling method (e.g. specimen collection, systematic searching, various, multiple, mixed trap etc).
+
+```{r}
+overall <- overall %>% ungroup()
+
+overall %>% select(SS, Sampling_method) %>% unique() %>%  View()  # have a look at the sampling methods for each study
+
+# For studies with multiple sampling methods in the source paper, I have left it as multiple as its not useful to have them all listed, but I've specified the multiple sampling methods as a comment
+
+overall <- overall %>%
+  mutate(Sampling_method = case_when(
+    SS == "AD1_2002__Vazquez 1" ~ "flower visitation observation",
+    SS == "AD1_2009__Vergara 1" ~ "flower visitation observation",
+    SS == "AD1_2011__Bates 1" ~ "Pan traps/sweep nets/hand searching", # multiple
+    SS == "AD1_2011__Weiner 1" ~ "flower visitation observation",
+    SS == "AD1_2013__Grass 1" ~ "flower visitation observation",
+    SS == "AR1_2008__Basset 1" ~ "Malaise traps/yellow pan traps/pitfall traps", # multiple
+    SS == "CC1_2005__Barratt 1" ~ "soil sample",
+    SS == "CC1_2005__Barratt 2" ~ "soil sample",
+    SS == "CC1_2008__Schon 1" ~ "soil cores along transects",
+    SS == "CC1_2008__Schon 2" ~ "soil cores along transects",
+    SS == "CC1_2010__Schon 2" ~ "soil cores along transects",
+    SS == "CC1_2012__Waite 2" ~ "bole traps/flight intercept trap/foliage sampling", # multiple
+    SS == "CC1_2013__Litchwark 1" ~ "flower visitation observation",
+    SS == "CC1_2014__Rader 1" ~ "flight intercept trap/pan trap", # multiple
+    SS == "DG1_2012__Ge 1" ~ "soil cores along transects",
+    SS == "GP1_2009__Vasconcelos 2" ~ "litter collection",
+    SS == "HP1_2006__Lachat 1" ~ "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap", # multiple
+    SS == "MH1_2009__Turner 1" ~ "Leaf litter sampling/ferns cut and bagged/fogging for canopy species", # multiple
+    SS == "SC1_2005__Richardson 1" ~ "litter collection",
+    SS == "SJ2_2019__Eckert 1" ~ "pit-fall traps", # multiple "Pitfall trapping/direct sampling (i.e. active searching) within quadrats" but didn't include direct sampling as not a PREDICTS sampling method
+    SS == "VB1_2005__Eggleton 2" ~ "Hand sorting in quadrat and winkler bags", # multiple
+    SS == "VB1_2012a_Carpenter 1" ~ "Soil cores/pitfall traps", # multiple
+    SS == "VB1_2012__LeightonGoodall 1" ~ "Leaf litter sampling/soil sampling", # multiple
+    SS == "GP1_2009__Vasconcelos 1" ~ "litter collection", # this study was subset at source level
+    SS == "VB1_2012__Carpenter 5" ~ "soil sampling/litter collection/pitfall traps", # this study was subset at source level - multiple
+    SS == "AD1_2006__Blanche 1" ~ "flower visitation observation",
+    SS == "AD1_2006__Blanche 2" ~ "flower visitation observation",
+    SS == "AD1_2007__Meyer 2" ~ "flower visitation observation",
+    SS == "SH1_2011__Todd 1" ~ "flight intercept/pan trap/pitfall trap", # multiple
+    SS == "VB1_2020__Burton 2" ~ "litter collection", # multiple
+    TRUE ~ Sampling_method
+  ))
+
+# Recheck
+overall %>% select(SS, Order, Sampling_method) %>% unique() %>%  View()
+
+overall %>% filter(SS == "AD1_2011__Schuepp 1") %>% select(SS, Order, Family, Genus, Taxon_name_entered, Sampling_method, Measurement) %>%  View()
+```
+
+# Now that all the sampling methods are updated, I will remove bycatch data. The idea being that some groups in dataset may have been sampled inappropriately, with suboptimal sampling methods and may potentially be bycatch (caught incidentally). I will remove these data based on the expert list mentioned provided by Andrew and a paper from Montgomery, et al., (2021). 
+
+
+```{r}
+# Lets have a look at all of the order x sampling method combinations in my datasets
+overall %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+
+unique(overall$Sampling_method)
+
+# First, I will merge similar methods, e.g. sweep netting and sweep net.
+overall <- overall %>%
+mutate(Sampling_method = recode_factor(Sampling_method,
+                                       "sweep netting" = "sweep net", # Combine sweep net and sweep netting
+                                       "sweep_netting" = "sweep net",
+                                       "soil core" = "soil sample",
+                                      "soil cores along transects" = "soil sample", # Combine soil cores, soil cores along transect and soil sample
+                                      "mixed traps" = "multiple", # Combine mixed traps with multiple traps
+                                      "window trap" = "flight trap" # Combine window trap with flight trap as they are the same thing
+                                      ))
+unique(overall$Sampling_method)
+
+```
+
+
+# Some studies contain instances of larvae, speaking with Gavin Broad, you would only expect to catch larvae in the soil, therefore all other instances of larvae caught with any sampling method other than the various soil sampling methods are bycatch. I will remove those data.
+
+```{r}
+# Lets have a look at all instances of larvae
+overall %>% 
+  filter(grepl('larv|immatu|pupa|nymphe|nymph_', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae 
+  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
+  unique %>% 
+  View() 
+
+# Which studies definitely contain larvae?
+  overall %>% 
+  filter(grepl('larv|immatu|pupa|nymphe|nymph_', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae
+  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
+  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
+  unique() %>% 
+  pull(SS) %>%
+  droplevels() %>%
+  levels()
+
+# Larvae_keep is data for larvae that are sampled in the soil and are therefore not bycatch
+larvae_keep <- overall %>%  
+  filter(grepl('larv|immatu|pupa|nymphe|nymph_', Taxon_name_entered, ignore.case = T) & Sampling_method %in% 
+           c("soil sample",
+             "soil sampling/litter collection/pitfall traps",
+             "Soil cores/pitfall traps",
+             "Leaf litter sampling/soil sampling")) %>%  
+  # I checked those studies with multiple sampling methods that include soil and not many instances of larvae so shouldn't be an issue to include them.
+            droplevels()
+
+# Below code is no longer needed
+
+# This is a bit of a clunky way of filtering out larvae data which isn't sampled in the soil, but it works.
+# I first remove all instances of larvae (larvae removed) and then rebind this dataframe to larvae_keep (larvae sampled in the soil)
+#larvae_removed <- overall %>%
+  #filter(!(grepl('larv|immatu|pupa|nymphe|nymph_', Taxon_name_entered, ignore.case = T))) # I remove all larvae data
+
+#overall <- bind_rows(larvae_removed, larvae_keep) # then rebind the larvae_keep data
+#rm(larvae_keep, larvae_removed)
+```
+
+# Larvae_keep contains data only on larvae where they have been sampled appropriately.
+
+# Now I will filter each of the expert sampling methods for the orders and which are not bycatch.
+```{r}
+# Bladon expert methods include:
+# Pitfall traps - assigned predicts method: baited pitfall traps, pitfall traps (already filtered based on comms with VB)
+# Active visual surveys (such as transect walks and hand netting) - sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching
+# Beating sheet - (no predicts sampling methods)
+# Light trap - light trap.
+# Pan trap - pan traps, glue trap (VB says glue trap is a pan trap, but I've already filtered above)
+# Flight interception trap - flight trap, harp trap
+# Pheromone trap - (no predicts sampling methods)
+# Malaise trap - malaise trap.
+# Winkler bags - litter collection, hand sorting in quadrat and winkler bags
+
+
+# active visual surveys good for all five orders
+active_visual_surveys <- overall %>% filter(Order %in% c("Lepidoptera", "Coleoptera", "Diptera", "Hymenoptera", "Hemiptera") 
+                                            & Sampling_method %in% c("sweep net", 
+                                                                     "aerial transect", 
+                                                                     "flower visitation observation", 
+                                                                     "visual encounter survey", 
+                                                                     "systematic searching")) 
+# The systematic searching study is TN1_2008__Ngai 1 where they sampled water filled bromeliads but none of the orders are bycatch
+
+
+# light trap - good for all except Hemiptera
+light_trap <- overall %>% filter(Order %in% c("Lepidoptera", "Coleoptera", "Diptera", "Hymenoptera") & Sampling_method == "light trap")
+
+# pan trap - good for all except Lepidoptera
+pan_trap <- overall %>% filter(Order %in% c("Coleoptera", "Diptera", "Hymenoptera", "Hemiptera") & Sampling_method %in% c("pan traps", 
+                                                                                                "Pan traps/sweep nets/hand searching",
+                                                                                                "Malaise traps/yellow pan traps/pitfall traps",
+                                                                                                "flight intercept trap/pan trap",
+                                                                                                "flight intercept/pan trap/pitfall trap"))
+
+
+# flight intercept / harp - good for Hymenoptera and Coleoptera
+flight_trap <- overall %>% filter(Order %in% c("Coleoptera", "Hymenoptera") & Sampling_method %in% 
+                                    c("flight trap",
+                                      "bole traps/flight intercept trap/foliage sampling",
+                                      "flight intercept trap/pan trap",
+                                      "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap",
+                                      "flight intercept/pan trap/pitfall trap",
+                                      "harp trap"))
+
+# Malaise trap - good for all except Lepidoptera
+malaise_trap <- overall %>% filter(Order %in% c("Coleoptera", "Diptera", "Hymenoptera", "Hemiptera") & Sampling_method %in% c("malaise traps",
+                                                                                                          "Malaise traps/yellow pan traps/pitfall traps",
+                                                                  "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap"))
+
+
+# Winkler bags or litter collection good for beetles and ants, other orders bycatch <write code>
+winkler_beetles <- overall %>% filter(Order == "Coleoptera" & Sampling_method %in% c("litter collection", 
+                                                                                     "soil sampling/litter collection/pitfall traps",
+                                                                                     "Hand sorting in quadrat and winkler bags", 
+                                                                                     "Leaf litter sampling/ferns cut and bagged/fogging for canopy species",
+                                                                                     "Leaf litter sampling/soil sampling"))
+
+
+winkler_ants <- overall %>% filter(Order == "Hymenoptera" & Family == "Formicidae" & Sampling_method %in% c("litter collection", 
+                                                                                     "soil sampling/litter collection/pitfall traps",
+                                                                                     "Hand sorting in quadrat and winkler bags", 
+                                                                                     "Leaf litter sampling/ferns cut and bagged/fogging for canopy species",
+                                                                                     "Leaf litter sampling/soil sampling"))
+
+# All expert methods have now been filtered for bycatch
+```
+
+# For each of the sampling methods in PREDICTS that can't be assigned to an expert sampling method, I will filter for the non-bycatch data based on comms with
+# Victoria, Gavin and Ben.
+```{r}
+# Predicts methods which can't be assigned to an expert sampling method
+# Multiple, soil sample, trap nests, bole trap, suction samplers, live traps, baited traps.
+
+# Multiples have been defined = if the multiple sampling methods match the expert then keep that data.
+# VB says glue trap = pan trap.
+
+# Soil sample only good for ants <write code>
+soil_sampling <- overall %>% 
+  filter(Order == "Hymenoptera" & Family == "Formicidae" & Sampling_method %in% c("soil sample",
+                                                                                  "soil sampling/litter collection/pitfall traps",
+                                                                                  "Soil cores/pitfall traps",
+                                                                                  "Leaf litter sampling/soil sampling"))
+
+
+# Glue trap good for Hymenoptera, Diptera and Hemiptera, other orders bycatch <write code>
+glue_trap <- overall %>% filter(Order %in% c("Hymenoptera", "Diptera", "Hemiptera") & Sampling_method == "glue traps")
+
+# Bole trap only good for Coleoptera <write code>
+bole_trap <- overall %>%  filter(Order == "Coleoptera" & Sampling_method %in% c("bole trap", 
+                                                                           "bole traps/flight intercept trap/foliage sampling"))
+
+
+# BW says suction samplers good for Coleoptera and Hemiptera but not Hymenoptera and Lepidoptera <write code>
+suction <- overall %>% filter(Order %in% c("Coleoptera", "Hemiptera") & Sampling_method == "suction samplers")
+
+# Only Hymenoptera for trap nests says VB <write code>
+trap_nests <- overall %>% filter(Order == "Hymenoptera" & Sampling_method == "trap nests")
+
+# Pitfall traps good for only Coleoptera and ants says VB (surprisingly not good for Hemiptera) <write code>
+pitfall_beetles <- overall %>% filter(Order == "Coleoptera" & 
+                                        Sampling_method %in% c("Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap",
+                                                               "Malaise traps/yellow pan traps/pitfall traps", 
+                                                               "Soil cores/pitfall traps", 
+                                                               "soil sampling/litter collection/pitfall traps", 
+                                                               "pit-fall traps", 
+                                                               "baited pit-fall traps", 
+                                                               "flight intercept/pan trap/pitfall trap"))
+
+pitfall_ants <- overall %>% filter(Order == "Hymenoptera" & Family == "Formicidae" 
+                                   & Sampling_method %in% c("Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap",
+                                                               "Malaise traps/yellow pan traps/pitfall traps", 
+                                                               "Soil cores/pitfall traps", 
+                                                               "soil sampling/litter collection/pitfall traps", 
+                                                               "pit-fall traps", 
+                                                               "baited pit-fall traps", 
+                                                               "flight intercept/pan trap/pitfall trap"))
+
+# Check the unique levels of pitfall trapping
+overall %>%  
+  filter(grepl('pit', Sampling_method, ignore.case = T)) %>% 
+  droplevels() %>% 
+  select(Sampling_method) %>% 
+  unique() %>% 
+  View()
+
+# 2023 Smith paper = baited-traps, Diptera and Hymenoptera OK (Hymenoptera > 20% of the individuals) but Coleoptera, Hemiptera, and Lepidoptera bycatch. 
+baited_trap <- overall %>% filter(Order %in% c("Diptera", "Hymenoptera") & Sampling_method == "baited traps") 
+
+# Live traps (TN_1_2007_Bouyer 2 and TN_1_2007_Bouyer 3) all taxa are targeted - checked source paper so no need for filtering.
+live_trap <- overall %>% filter(Sampling_method == "live traps")
+
+
+# All non-expert methods have now been filtered for non bycatch data
+```
+
+# Now that I've removed bycatch from all of the sampling methods, I will combine all of the sampling methods and the larvae_keep data
+```{r}
+clean <- bind_rows(active_visual_surveys,
+                   baited_trap,
+                   bole_trap,
+                   flight_trap,
+                   glue_trap,
+                   larvae_keep,
+                   light_trap,
+                   live_trap,
+                   malaise_trap,
+                   pan_trap,
+                   pitfall_ants,
+                   pitfall_beetles,
+                   soil_sampling,
+                   suction,
+                   trap_nests,
+                   winkler_ants,
+                   winkler_beetles) 
+
+# Remove duplicate rows as some data will have been duplicated due to the studies with multiple sampling methods.
+clean <- unique(clean)
+
+nrow(overall) - nrow(clean) # 87401 rows of bycatch data removed
+length(unique(overall$SS)) - length(unique(clean$SS)) # 7 studies removed
+
+# Which studies are different between the overall and cleaned dataset?
+different_studies <- anti_join(overall, clean, by = "SS") %>% droplevels()
+
+# Lets have a look
+different_studies %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+# Now for Hymenoptera for Charlie
+different_studies %>% filter(Order == "Hymenoptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+different_rows <- rbind(setdiff(overall, clean)) %>% droplevels() # setdiff calculates all rows in overall that aren't in clean (i.e. bycatch)
+
+# Give me all the unique study x order x sampling method combinations that are bycatch
+different_rows %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+# Now for Hymenoptera
+different_rows %>% filter(Order == "Hymenoptera") %>%  select(SS, Order, Family, Sampling_method) %>% unique() %>% View()
+
+clean %>% filter(Order == "Hymenoptera") %>% select(SS) %>% unique() %>% View()
+
+rm(active_visual_surveys,baited_trap,bole_trap,flight_trap,glue_trap,larvae_keep,light_trap,live_trap,malaise_trap,pan_trap,pitfall_ants,pitfall_beetles,
+soil_sampling,suction,trap_nests,winkler_ants,winkler_beetles)
+
+```
+
+# Filter each order to only those taxa that have been sampled appropriately.
+```{r}
+# For each order below these are the predicts sampling methods that fit with the expert sampling methods:
+
+# Leps
+overall %>% filter(Order == "Lepidoptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View() 
+# Sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, light trap (moths), soil sample for lep larvae only.
+
+leps_clean <- overall %>% filter(Order == "Lepidoptera" & Sampling_method %in% c("sweep net", "aerial transect", "flower visitation observation","visual encounter survey", "systematic searching", "light trap","soil core", "soil cores along transects", "Soil cores/pitfall traps","soil sample","soil sampling/litter collection/pitfall traps")) 
+
+
+
+# Include soil as larvae has already been filtered in the soil?
+
+# Coleoptera
+overall %>% filter(Order == "Coleoptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+# pitfall traps, baited pit fall traps, sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, light trap, pan trap, glue trap, flight interception trap, harp trap, malaise trap, soil sample for larvae and adults.
+
+col_clean <- overall %>% filter(Order == "Coleoptera" & Sampling_method %in% c("Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap", "Malaise traps/yellow pan traps/pitfall traps", "Soil cores/pitfall traps", "soil sampling/litter collection/pitfall traps", "pit-fall traps", "baited pit-fall traps", "sweep net", "aerial transect", "flower visitation observation","visual encounter survey", "systematic searching", "light trap", "pan traps", "Pan traps/sweep nets/hand searching", "Malaise traps/yellow pan traps/pitfall traps", "flight intercept trap/pan trap", "glue traps", "flight trap", "bole traps/flight intercept trap/foliage sampling", "flight intercept trap/pan trap","Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap", "harp trap", "malaise traps"))
+
+# soil sample for larvae and adults?
+
+# Diptera
+overall %>% filter(Order == "Diptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+# Malaise trap, pan trap, glue trap, sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, light trap, soil sample for larvae only.
+# (?) - Diptera in flight trap? 
+
+dip_clean <- overall %>% filter(Order == "Diptera" & Sampling_method %in% c("malaise traps", "Malaise traps/yellow pan traps/pitfall traps", "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap",
+"pan traps", "Pan traps/sweep nets/hand searching", "flight intercept trap/pan trap", "glue traps", "sweep net", "aerial transect", "flower visitation observation","visual encounter survey", "systematic searching", "light trap"))
+
+# soil sample for larvae only?
+
+# Hymenoptera
+overall %>% filter(Order == "Hymenoptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+# For ants - pitfall trap, baited pitfall traps sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, malaise trap, pan trap (according to Montgomery)
+# For bees + wasps - cannot infer, only has subset for bees but not wasps.
+
+# Hymenoptera overall - sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, pan trap, glue trap, malaise trap, light trap, pitfall trap, baited trap, flight interception trap, harp trap, litter collection, soil sample for larvae and adults.
+
+
+# Should I split bees and ants and wasps?
+
+hym_clean <- overall %>% filter(Order == "Hymenoptera" & Sampling_method %in% c("sweep net", "aerial transect", "flower visitation observation","visual encounter survey", "systematic searching","pan traps", "Pan traps/sweep nets/hand searching", "Malaise traps/yellow pan traps/pitfall traps", "flight intercept trap/pan trap", "glue trap",
+"malaise traps", "Funnel pitfall traps/ malaise trap/flight intercept trap/pyramid shaped emergence trap", "light trap", "baited pit-fall traps", "soil sampling/litter collection/pitfall traps", "pit-fall traps", "Soil cores/pitfall traps", "baited traps", "flight trap", "bole traps/flight intercept trap/foliage sampling", "harp trap", "litter collection", "Leaf litter sampling/ferns cut and bagged/fogging for canopy species", "Leaf litter sampling/soil sampling"))
+
+# Soil sample for adults and larvae?
+
+# Check the unique levels of pitfall trapping
+overall %>%  
+  filter(grepl('litter', Sampling_method, ignore.case = T)) %>% 
+  droplevels() %>% 
+  select(Sampling_method) %>% 
+  unique() %>% 
+  droplevels() %>% 
+  View() 
+
+
+# Hemiptera
+overall %>% filter(Order == "Hemiptera") %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+# sweep net, aerial transect, flower visitation observation, visual encounter survey, systematic searching, malaise trap, light trap, pitfall trap, pan trap, glue trap, soil sample for larvae and adults. 
+
+
+experts %>% filter(ORDER == "Hymenoptera") %>% select(ORDER, SUBSET.I, SUBSET.II, METHOD, OTHER.METHOD) %>% View()
+experts %>% filter(SUBSET.I == "Formicidae") %>% select(ORDER, SUBSET.I, SUBSET.II, METHOD, OTHER.METHOD) %>% View()
+overall %>% group_by(Order) %>% count(Sampling_method) %>% View()
+unique(overall$Sampling_method)
+overall %>% filter(Sampling_method == "multiple") %>% select(SS, Sampling_method) %>%  unique() %>%  View()
+```
+
+# Next, I will write some code that removes data which isn't sampled using the expert informed methods provided by Andrew.
+```{r}
+# Specify conditions for each order
+test <- overall %>%
+  filter(
+   (Order == "Coleoptera" & Sampling_method %in% c("pit-fall traps", "visual encounter survey", "aerial transect", "light trap", "pan traps",
+                                                     "flight trap", "malaise trap", "sweep net")) | 
+      # could not include pheremone or beating sheet as isn't a sampling method in predicts. 
+   (Order == "Diptera" & Sampling_method %in% c("malaise trap", "visual encounter survey", "aerial transect", "sweep net", "pan traps", "light trap")) |
+   (Order == "Hymenoptera" & Sampling_method %in% c("malaise trap", "visual encounter survey", "aerial transect", "sweep net", "pit-fall traps", "pan traps", "light trap", "flight trap", "litter collection" )) | # could not include beating sheet
+   (Order == "Lepidoptera" & Sampling_method %in% c("visual encounter survey", "aerial transect", "sweep net","light trap")) |
+   (Order == "Hemiptera" & Sampling_method %in% c("visual encounter survey", "aerial transect", "sweep net", "malaise trap", "light trap", "pit-fall traps", "pan traps")))
+
+
+test %>% select(SS, Order, Sampling_method) %>% unique() %>% View()
+
+
+# Active visual survey in Montgomery = visual encounter survey + aerial transect + sweep net in predicts (as the spreadsheet states "active visual surveys such as transect walks and hand netting")
+# For Hymenoptera, an expert recommended winkler bags which sample leaf litter, so I've included the predicts sampling method = litter collection
+
+# We need to do a more specific hymenopteran code that says if its ants, they can only be sampled with pitfall traps.
+
+
+unique(overall$Sampling_method)
+
+
+overall %>% filter(Sampling_method == "litter collection") %>% select(SS, Order) %>% unique() %>%  View()
+
+overall %>% filter(Order == "Coleoptera") %>% select(SS, Order, Sampling_method) %>% unique() %>%  View()
+
+overall %>% filter(Sampling_method == "harp trap") %>% select(SS, Order) %>% unique() %>%  View()
+```
+
+# Montgomery states this is bycatch
+
+```{r}
+
+overall <- overall %>%
+  filter(
+   !(Family == "Formicidae" & Sampling_method == "light trap") | 
+      # could not include pheremone or beating sheet as isn't a sampling method in predicts. 
+   !(order == "Diptera" & Sampling_method == "pit-fall traps") |
+   (order == "Lepidoptera" & Sampling_method %in% c("visual encounter survey", "aerial transect", "sweep net","light trap")) |
+   !(order == "Hemiptera" & Sampling_method %in% c("visual encounter survey", "aerial transect", "sweep net", "malaise trap", "light trap", "pitfall traps", "pan traps")) |
+  )
+
+# Acoustic monitoring + beating sheet is bycatch for Diptera but not a sampling method in predicts
+# Montgomery states that active visual surveys is bycatch for Diptera but experts state its a suitable method
+#  Leps in anything other than active visual surveys is bycatch (malaise, light, pan, pitfall, beating sheet, acoustic monitoring)
+# Night active moths in anything other than light trapping is bycatch (malaise, light, pan, pitfall, beating sheet, acoustic monitoring)
+
+# Pitfall traps only suitable for beetles + ants (they may incidentally collect flying taxa, but are not an effective sampling method for most other groups)
+# Malaise traps only optimal for flying insects
+
 ```
 
 # Now I have subset PREDICTS for multiple groups, lets extract the precision scores
@@ -165,42 +672,18 @@ five_orders <-
 # Lets simplify taxa
 simple <- taxa %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered, PrecisionScore) %>% unique() %>% droplevels()
 
-# Lets simplify five_orders 
-compare <- five_orders %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered) %>% unique() %>% droplevels()
+# Lets simplify overall 
+compare <- overall %>% dplyr::select(Source_ID, SS, Order, Taxon_name_entered) %>% unique() %>% droplevels()
 
-# Semi join returns all rows from simple which have a match in compare based on the same columns, including their precision scores.
+# Semi join returns all the rows from the precision score dataset which have a match in my multi-group dataset
 scores <- semi_join(simple, compare, by = c("Source_ID", "SS", "Order", "Taxon_name_entered")) %>% unique() %>% droplevels()
 
-# Lets have a look at the most influential study in my dataset, which also contains bycatch in the form of larvae.
+# Lets have a look at the most influential study in my dataset, which used to contain bycatch in the form of larvae
+# but this has already been filtered out
 scores %>% dplyr::select(SS, Order, Taxon_name_entered, PrecisionScore) %>% filter(SS == "DI1_2013__Rousseau 2") %>% unique() %>% View()
 
 # Lets have a look at taxa resolved to order level
-scores %>% filter(PrecisionScore == 1) %>% View() # many instances of larvae
-```
-
-# Larvae
-
-```{r}
-# Lets have a look at larvae
-five_orders %>% 
-  filter(grepl('larv|immatu|pupa|nymph', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae
-  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
-  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
-  unique %>% 
-  View() 
-
-# lets pull those larvae studies
-larvae_studies <-
-  five_orders %>% 
-  filter(grepl('larv|immatu|pupa|nymph', Taxon_name_entered, ignore.case = T)) %>% # different words for larvae
-  dplyr::select(SS, Higher_taxon, Taxon_name_entered, Order, Genus, Species, Sampling_method) %>% 
-  filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>%  # orders relevant to my analysis
-  unique() %>% 
-  pull(SS) %>%
-  droplevels()
-
-# Have a look at those DEFINITE larvae studies
-levels(larvae_studies)
+scores %>% filter(PrecisionScore == 1) %>% View() # larvae are samnpled in the soil
 ```
 
 # Lets calculate the mean precision scores for each of the orders within a study
@@ -231,7 +714,7 @@ mean_scores <-
 
 scores %>% filter(SS == "VB1_2023__Smith 1") %>%  View()
 
-five_orders %>% 
+overall %>% 
   filter(SS == "VB1_2023__Smith 1") %>%  
   dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
   unique() %>%  
@@ -265,11 +748,13 @@ unique(big_diff$SS)
 scores %>% filter(SS == "AD1_2007__Meyer 1") %>%  View() # leps resolved to order level
 
 # check multi-group subset
-five_orders %>% 
+overall %>% 
   filter(SS == "AD1_2007__Meyer 1") %>%  
   dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
   unique() %>%  
-  View() # method is flower visitation observation which is fine for all orders
+  View() 
+
+# method is flower visitation observation which is fine for all orders
 
 ##%######################################################%##
 #                                                          #
@@ -281,7 +766,7 @@ five_orders %>%
 scores %>% filter(SS == "AD1_2010__Quintero 1") %>%  View() # leps resolved to order level
 
 # check multi-group subset
-five_orders %>% 
+overall %>% 
   filter(SS == "AD1_2010__Quintero 1") %>%  
   dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
   unique() %>%  
@@ -292,7 +777,7 @@ five_orders %>%
 
 ##%######################################################%##
 #                                                          #
-####      AD2_2018__Salles 1 - dips/leps bycatch        ####
+####      AD2_2018__Salles 1 - dips bycatch             ####
 #                                                          #
 ##%######################################################%##
 
@@ -300,15 +785,15 @@ five_orders %>%
 scores %>% filter(SS == "AD2_2018__Salles 1") %>%  View() # col, dip, hemi resolved to order level, only hymenoptera resolved to sp level.
 
 # check multi-group subset
-five_orders %>% 
+overall %>% 
   filter(SS == "AD2_2018__Salles 1") %>%  
   dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
   unique() %>%  
   View() 
 
-# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dip and Lep bycatch.
-# Montgomery = pitfall traps for diptera (bycatch), lep (bycatch).
-# looks like the study sampled arthropods but focused on ants, and classified them into functional groups, regardless dip and leps can be assumed bycatch.
+# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dip bycatch.
+# Montgomery = pitfall traps for diptera (bycatch)
+# looks like the study sampled arthropods but focused on ants, and classified them into functional groups, regardless dip can be assumed bycatch.
 
 
 ##%######################################################%##
@@ -327,28 +812,30 @@ five_orders %>%
   unique() %>%  
   View() 
 
-# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dips bycatch (no leps in study 2)
-# Montgomery = pitfall traps for diptera (bycatch), lep (bycatch).
+# Experts = pitfall traps only good for Coleoptera, ants (Hymenoptera) and Hemipterans, therefore Dips bycatch.
+# Montgomery = pitfall traps for diptera (bycatch).
 # looks like the study sampled arthropods but focused on ants, and classified them into functional groups, regardless dips bycatch.
 
 
 ##%######################################################%##
 #                                                          #
-#   DI1_2013__Rousseau 1 - larvae, dips, leps bycatch   ####
+#   DI1_2013__Rousseau 1 - verify dips and leps in soil sample ####
 #                                                          #
 ##%######################################################%##
 
-scores %>% filter(SS == "DI1_2013__Rousseau 1") %>%  View() # same source as above just seperate study
+scores %>% filter(SS == "DI1_2013__Rousseau 1") %>%  View()
 
 # check multi-group subset
-five_orders %>% 
+overall %>% 
   filter(SS == "DI1_2013__Rousseau 1") %>%  
   dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
   unique() %>%  
   View() 
 
 # looking at source paper, soil core sampling was not the only method, pitfall traps were used too.
-#  for this study we will get rid of all larvae, and all dipterans + leps, as they are bycatch in soil sampling.
+# for this study we will keep larvae as they are not bycatch in soil.
+# And verify with GB if dips and leps are bycatch in soil sampling and pitfall trap.
+
 
 ##%######################################################%##
 #                                                          #
@@ -366,7 +853,7 @@ five_orders %>%
   View() 
 
 # More things resolved to sp level in this second study
-# same as above, get rid of larve, dips + leps.
+# same as above, get rid of larvae, dips + leps.
 
 ##%######################################################%##
 #                                                          #
@@ -385,7 +872,7 @@ five_orders %>%
 
 #  All 5 orders in this study, and everything resolved well except leps.
 # Mixed traps = 11 traps (3 flight intercept traps, three yellow pan traps, 5 pitfall traps)
-# Because of mixed traps, impossible to identifty bycatch for this study. 
+# Because of mixed traps, impossible to identify bycatch for this study. 
 
 ##%######################################################%##
 #                                                          #
@@ -463,7 +950,7 @@ five_orders %>%
 #                                                                         #
 ##%#####################################################################%##
 
-scores %>% filter(SS == "SS1_2015__Ponge 1") %>% unique() %>% View() # same source as above just separate study
+scores %>% filter(SS == "SS1_2015__Ponge 1") %>% unique() %>% View() 
 
 # check multi-group subset
 five_orders %>% 
@@ -482,7 +969,7 @@ five_orders %>%
 #                                                                         #
 ##%#####################################################################%##
 
-scores %>% filter(SS == "VB1_2005__Eggleton 1") %>% unique() %>% View() # same source as above just separate study
+scores %>% filter(SS == "VB1_2005__Eggleton 1") %>% unique() %>% View() 
 
 # check multi-group subset
 five_orders %>% 
@@ -497,8 +984,7 @@ five_orders %>%
 # Study 1 = Winkler method/litter collection. 
 # Lots of coleopteran larvae in this study
 # Only col and ants went resolved taxonomically.
-# Paper states "All sampled macrofauna specimens were identified to named species, except larval forms, adult Hemiptera and adult non-ant Hymenoptera,
-# none of which could be consistently identified to species."
+# Paper states "All sampled macrofauna specimens were identified to named species, except larval forms, adult Hemiptera and adult non-ant Hymenoptera, none of which could be consistently identified to species."
 # Larvae bycatch, leps bycatch, dipterans bycatch, non ant hymenopterans probably bycatch.
 
 ##%######################################################%######%##########
@@ -537,27 +1023,10 @@ five_orders %>%
 # Checking Sharepoint this study contains unpublished data from a PhD thesis, but looking at the sampling method (soil cores)
 # And that the study only samples beetles and ants, no obvious bycatch here.
 
-##%######################################################%######%##########
-#                                                                         #
-# VB1_2006__Smith 1  - ALL GOOD 
-#                                                                         #
-##%#####################################################################%##
-
-scores %>% filter(SS == "VB1_2008a_Smith 1") %>% unique() %>% View() # same source as above just separate study
-
-# check multi-group subset
-five_orders %>% 
-  filter(SS == "VB1_2008a_Smith 1") %>%  
-  dplyr::select(SS, Order, Family, Genus, Species, Taxon_name_entered, Sampling_method, Measurement) %>% 
-  unique() %>%  
-  View() 
-
-# Checking Sharepoint this study contains unpublished data from a PhD thesis, but looking at the sampling method (soil cores)
-# And that the study only samples beetles and ants, no obvious bycatch here.
 
 ##%######################################################%######%##########
 #                                                                         #
-# VB1_2006__Smith 1  - Larvae bycatch, dipterans bycatch, non-ant hymenopterans bycatch and leps bycatch. 
+# VB1_2008a_Smith 1  - Larvae bycatch, dipterans bycatch, non-ant hymenopterans bycatch and leps bycatch. 
 #                                                                         #
 ##%#####################################################################%##
 
@@ -592,7 +1061,7 @@ five_orders %>%
 
 # Sampling method = various, predicts data entry form states its soil cores / pitfall traps.
 # therefore, diptera bycatch, leps bycatch, non-ant hymenopterans bycatch and coleopteran larvae bycatch.
-# this study comes from unpublished data and has coleopteran larvae
+# this study comes from unpublished data and has coleopteran larvae.
 
 ##%######################################################%######%##########
 #                                                                         #
@@ -629,6 +1098,7 @@ five_orders %>%
 
 # Sampling method = multiple, messaged Victoria and the sampling methods were soil pits for hand sorted inverts and then mustard vermifuge for earthworms
 # Just diptera are bycatch.
+# will assign the sampling method as 
 
 ##%######################################################%######%##########
 #                                                                         #
