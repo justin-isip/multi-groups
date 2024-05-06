@@ -208,15 +208,15 @@ get_site_abundances_order <- function(data,
 #### Load all other functions
 
 ```{r}
-source("/Applications/PhD/Andy/data_prep_functions.R")
-source("/Applications/PhD/Andy/site_comparison_functions.R")
+source("/Users/jusi/Desktop/PhD/Andy/data_prep_functions.R")
+source("/Users/jusi/Desktop/PhD/Andy/site_comparison_functions.R")
 source("https://highstat.com/Books/Book2/HighstatLibV10.R") # collinearity
 ```
 
 #### Read in the data
 
 ```{r}
-diversity <- readRDS("./data/diversity-2023-09-14-02-33-21.rds")
+diversity <- readRDS("/Users/jusi/Desktop/PhD/data/diversity-2023-09-14-02-33-21.rds")
 ```
 
 #### Correct for sampling effort
@@ -778,8 +778,6 @@ model_plot <-function(mod.for.plot){
 ```{r}
 source("https://highstat.com/Books/Book2/HighstatLibV10.R")
 ```
-
-
 
 #### Calculate site level diversity metrics using get_site_abundances_order and order_fold for each site x order combination
 ```{r}
