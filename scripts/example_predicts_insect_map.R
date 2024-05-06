@@ -5,11 +5,14 @@ library(ggplot2)
 # here::here also called in place
 
 # read in predicts database
-predicts_database <- readRDS(here::here("data/predicts_database.rds")) %>%
+predicts_database <- readRDS(here::here(file.choose())) %>%
   filter(Class == "Insecta")
 
-data_coordinates <- predicts_database %>%
-  select(Longitude, Latitude) %>%
+
+
+
+data_coordinates <- clean %>%
+  dplyr::select(Longitude, Latitude, Order) %>%
   unique()
 
 # build base map for fertiliser/climate plot
@@ -33,7 +36,7 @@ base_map <- get_basemap() %>%
 site_distribution <- data_coordinates %>%
   ggplot() + 
   geom_polygon(aes(x = long, y = lat, group = group), data = base_map, fill = "lightgrey") +
-  geom_point(aes(x = Longitude, y = Latitude), alpha = 0.3) +
+  geom_point(aes(x = Longitude, y = Latitude, color = Order), size = 4) +
   coord_map(projection = "mollweide") +
   theme(axis.text = element_blank(), 
         axis.ticks = element_blank(), 
@@ -41,4 +44,10 @@ site_distribution <- data_coordinates %>%
         axis.line = element_blank(),
         text = element_text(size = 13),
         panel.grid = element_blank(), panel.background = element_rect(fill = "grey98"),
-        strip.text.x = element_text(size = 14))
+        strip.text.x = element_text(size = 14),
+        legend.position = "bottom") +
+  guides(colour = guide_legend(override.aes=list(shape = 19))) +
+  scale_color_manual(values= group_colours) +
+  theme(legend.key=element_rect(fill=NA), legend.text = element_text(size= 14)) 
+
+ggarrange(site_distribution, common.legend = TRUE, legend = "bottom") 
