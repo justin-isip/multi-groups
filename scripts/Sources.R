@@ -76,6 +76,69 @@ rm(predicts)
   rename(number="n") %>%
   droplevels()
 
+
+
+p1 <- clean %>% 
+  group_by(Source_ID) %>% 
+  count(Higher_taxon) %>%
+  rename(number="n") %>%
+  droplevels() 
+
+p2 <- model_data_ab %>% 
+  group_by(Source_ID) %>% 
+  count(Predominant_land_use) %>%
+  rename(number="n") %>%
+  droplevels() 
+
+p1 %>%
+  ggplot(aes(x = Higher_taxon, y = Source_ID, fill = number)) +
+  geom_tile() +
+  #scale_fill_gradient(trans = 'log') + # log scale
+  theme(axis.text.x = element_text(angle = 45, hjust= 1)) +
+  theme(axis.text.y  = element_text(size = 7)) 
+?rep#geom_text(aes(label = round(log(number), 1)))
+
+
+p1 %>%
+  ggplot(aes(x = Higher_taxon, y = Source_ID, fill = number)) +
+  geom_tile(width = 0.8, height = 0.8) +
+  scale_fill_gradient(low = "yellow", high = "red", name = "Number of records") +
+  geom_text(aes(label = round((number), 1)), color = "black", size = 3) + # Adjust label size and color as needed
+  theme_minimal() + 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  ) +
+  labs(
+    title = "",
+    x = "Order",
+    y = "Source"
+  )
+
+p2 %>%
+  ggplot(aes(x = Predominant_land_use, y = Source_ID, fill = number)) +
+  geom_tile(width = 0.8, height = 0.8) +
+  scale_fill_gradient(low = "yellow", high = "red", name = "Number of records") +
+  geom_text(aes(label = round((number), 1)), color = "black", size = 3) + # Adjust label size and color as needed
+  theme_minimal() + 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  ) +
+  labs(
+    title = "",
+    x = "Land-use category",
+    y = "Source"
+  )
+
+
+
 # HEAT MAP - Create a heat map showing how well represented taxonomic groups are across multi-group SOURCES (not studies) ---- 
 plot_source %>%
   ggplot(aes(x = Higher_taxon, y = Source_ID, fill = number)) +
@@ -84,4 +147,6 @@ plot_source %>%
   theme(axis.text.x = element_text(angle = 45, hjust= 1)) +
   theme(axis.text.y  = element_text(size = 7)) 
 ?rep#geom_text(aes(label = round(log(number), 1)))
+
+
 
