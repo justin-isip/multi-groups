@@ -233,8 +233,6 @@ print(summarise_diversity(diversity))
 ```{r}
 merged <- merge_sites(diversity, verbose = TRUE) 
 
-merged %>% filter(Class == "Insecta") %>%  dplyr::select(SS, Order, Sampling_method) %>%  View()
-
 ```
 
 #### First, I will find the studies which contain data for multiple insect groups but subset at the source level, rather than the study level. 
@@ -271,8 +269,6 @@ ss_multiple <- merged %>%
         (length(unique(Higher_taxon))) == 1 ~ "NO")) %>%  
   filter(Multiple_groups == "YES") %>% 
   droplevels()
-
-
 
 # Which data is subset at the source level but not at the study level?
 source_only <- anti_join(source_multiple, ss_multiple, 
@@ -734,7 +730,6 @@ get_site_abundances_order <- function(data,
   
   return(sites)
 }
-
 ```
 
 #### Add_order_fold to allow taxonomic cross-validation
@@ -743,6 +738,8 @@ get_site_abundances_order <- function(data,
 # Just adds order_fold column
 clean <- add_order_fold(clean, verbose = TRUE)
 levels(clean$order_fold)
+
+#322972 rows in final cleaned dataset 
 
 # Col = 159k, Dip = 26k, Hemi = 25k, Hym = 71k, Lep = 40k records.
 ```
@@ -785,6 +782,7 @@ source("https://highstat.com/Books/Book2/HighstatLibV10.R")
 clean <- get_site_abundances_order(clean, order_folds = TRUE, verbose = TRUE)
 
 table(clean$order_fold) # number of rows for each site x order combination
+
 ```
 
 #### Fix up your explanatory variables
@@ -846,7 +844,7 @@ model_data_sr <- drop_na(clean,
 #### Prepare the abundance model dataframe
 ```{r}
 # Check the distributions
-hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance) ; hist(model_data_ab$sqrtRescaledAbundance)
+hist(model_data_ab$RescaledAbundance) ; hist(model_data_ab$logAbundance) ; hist(model_data_ab$sqrtRescaledAbundance) 
 
 ```
 
@@ -982,6 +980,7 @@ length(unique(overall$SSBS)) # 4189 SITES for multi groups
 # 106 SS for non bycatch multi groups before model prep
 length(unique(clean$SS)) # 102 ss after model prep
 length(unique(clean$SSBS)) # 2580 sites after model prep
+
 ```
 
 #### Create land use categories and colours for plotting
@@ -992,6 +991,9 @@ length(unique(clean$SSBS)) # 2580 sites after model prep
 
 # Add specific colours for each order
 group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#197BBD", Coleoptera = "#581845") 
+
+
+
 ```
 
 
@@ -1514,9 +1516,6 @@ hc_m7 <- lmer(logAbundance ~ (1 | Source_ID) + (1|SS), data = hymenoptera_coleop
 AIC(hc_m1, hc_m4, hc_m5, hc_m6, hc_m7)
 model.sel(hc_m1, hc_m4, hc_m5, hc_m6, hc_m7) # hc_m1 still optimal
 
-# Check assumptions
-model_plot(hc_m1)
-
 # model estimates
 summary(hc_m1)
 ```
@@ -1627,8 +1626,8 @@ hymenoptera_coleoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -1636,20 +1635,31 @@ hymenoptera_coleoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
-  
-hymenoptera_coleoptera_plot_ab
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+
++ # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+
+hymenoptera_coleoptera_plot_ab 
 ```
 
 #### Extract abundance correlations and significance tests (unconstrained and through the origin)
@@ -1670,7 +1680,8 @@ hymenoptera <- corr_hym_ref[2:6, 1]
 plot(coleoptera, hymenoptera)
 qqnorm(hymenoptera, lty = 2)
 
-cor(coleoptera, hymenoptera)
+# correlation (unconstrained)
+cor.test(coleoptera, hymenoptera, method = "pearson")
 
 # regression through the origin (no intercept, only contains the slope)
 m <- lm(coleoptera ~ hymenoptera - 1)
@@ -1678,8 +1689,7 @@ plot(m)
 summary.lm(m)
 
 # Correlations
-cor.test(coleoptera, hymenoptera)
-cor(coleoptera, hymenoptera)
+cor.test(coleoptera, hymenoptera, method = "pearson")
 
 plot(coleoptera ~ hymenoptera)
 
@@ -1692,23 +1702,13 @@ coefplot(hc_m1)
 # get r2 from the summary; square-root it and give the result the correct sign to get the correlation coefficient through the origin
 r <- sqrt(summary(m)$r.squared)
 
-
-# Quick plot
-ggplot(hymenoptera_coleoptera, aes(x = Predominant_land_use,
-                                   y = logAbundance, 
-                                   col = Higher_taxon)) +
-  geom_boxplot() +
-  geom_jitter()
-
 with(hymenoptera_coleoptera, interaction.plot(Predominant_land_use, Higher_taxon, logAbundance))
-
-# Collinearity in the independent variables
-corvif(hymenoptera_coleoptera[ , c("Predominant_land_use", "Higher_taxon")])
 
 # and change the sign if you need to 
 a <- ifelse(coef(m) > 0, r, -r)
 
 a # positive correlation through the origin of 0.44
+
 ```
 
 #### Tidy
@@ -1872,8 +1872,8 @@ hymenoptera_coleoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -1881,18 +1881,22 @@ hymenoptera_coleoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
           axis.title.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
-  
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+
+
 hymenoptera_coleoptera_plot_sr
 ```
 
@@ -1940,7 +1944,9 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 col_hym <- ggarrange(hymenoptera_coleoptera_plot_ab, hymenoptera_coleoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/col_hym.png", col_hym, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/col_hym.png", col_hym, height = 10, width = 10)
+
+
 ```
 
 #### Tidy
@@ -2119,8 +2125,8 @@ diptera_hymenoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -2128,18 +2134,20 @@ diptera_hymenoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
           axis.ticks.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 diptera_hymenoptera_plot_ab
 ```
@@ -2161,7 +2169,6 @@ hymenoptera <- corr_hym_ref[2:6, 1]
 
 # Correlations
 cor.test(diptera, hymenoptera)
-cor(diptera, hymenoptera)
 plot(diptera, hymenoptera)
 
 # regression through the origin (no intercept, only contains the slope)
@@ -2176,7 +2183,6 @@ r <- sqrt(summary(m)$r.squared)
 a <- ifelse(coef(m) > 0, r, -r)
 
 a # positive correlation through the origin of 0.44
-
 ```
 
 #### Tidy
@@ -2340,8 +2346,8 @@ diptera_hymenoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -2349,17 +2355,20 @@ diptera_hymenoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+  
   
 diptera_hymenoptera_plot_sr
 ```
@@ -2403,7 +2412,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 dip_hym <- ggarrange(diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/dip_hym.png", dip_hym, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/dip_hym.png", dip_hym, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -2584,8 +2593,8 @@ hemiptera_hymenoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -2598,13 +2607,17 @@ hemiptera_hymenoptera_plot_ab <- combined %>%
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
           axis.ticks.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8,  linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hemiptera_hymenoptera_plot_ab
 ```
@@ -2805,8 +2818,8 @@ hemiptera_hymenoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -2814,17 +2827,19 @@ hemiptera_hymenoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hemiptera_hymenoptera_plot_sr
 ```
@@ -2869,7 +2884,7 @@ a # positive correlation through the origin of 0.44
 #### Arrrange two plots so they abbut and save them
 ```{r}
 hemi_hym <- ggarrange(hemiptera_hymenoptera_plot_ab, hemiptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/hemi_hym.png", hemi_hym, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/hemi_hym.png", hemi_hym, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -3050,8 +3065,8 @@ hymenoptera_lepidoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -3059,18 +3074,20 @@ hymenoptera_lepidoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hymenoptera_lepidoptera_plot_ab
 ```
@@ -3273,8 +3290,8 @@ hymenoptera_lepidoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -3282,17 +3299,19 @@ hymenoptera_lepidoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hymenoptera_lepidoptera_plot_sr
 ```
@@ -3335,7 +3354,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 hym_lep <- ggarrange(hymenoptera_lepidoptera_plot_ab, hymenoptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/hym_lep.png", hym_lep, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/hym_lep.png", hym_lep, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -3513,8 +3532,8 @@ coleoptera_diptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -3522,18 +3541,20 @@ coleoptera_diptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 coleoptera_diptera_plot_ab
 ```
@@ -3732,8 +3753,8 @@ coleoptera_diptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -3741,17 +3762,19 @@ coleoptera_diptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 coleoptera_diptera_plot_sr
 ```
@@ -3795,7 +3818,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 col_dip <- ggarrange(coleoptera_diptera_plot_ab, coleoptera_diptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/col_dip.png", col_dip, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/col_dip.png", col_dip, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -3974,8 +3997,8 @@ coleoptera_hemiptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -3983,18 +4006,20 @@ coleoptera_hemiptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 coleoptera_hemiptera_plot_ab
 ```
@@ -4193,8 +4218,8 @@ coleoptera_hemiptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -4202,17 +4227,20 @@ coleoptera_hemiptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+  
   
 coleoptera_hemiptera_plot_sr
 ```
@@ -4256,7 +4284,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 col_hemi <- ggarrange(coleoptera_hemiptera_plot_ab, coleoptera_hemiptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/col_hemi.png", col_hemi, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/col_hemi.png", col_hemi, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -4437,8 +4465,8 @@ coleoptera_lepidoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -4446,18 +4474,20 @@ coleoptera_lepidoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 coleoptera_lepidoptera_plot_ab
 ```
@@ -4658,8 +4688,8 @@ coleoptera_lepidoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -4667,17 +4697,19 @@ coleoptera_lepidoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 coleoptera_lepidoptera_plot_sr
 ```
@@ -4721,7 +4753,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 col_lep <- ggarrange(coleoptera_lepidoptera_plot_ab, coleoptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/col_lep.png", col_lep, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/col_lep.png", col_lep, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -4898,8 +4930,8 @@ diptera_hemiptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -4907,18 +4939,20 @@ diptera_hemiptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 diptera_hemiptera_plot_ab
 ```
@@ -5117,8 +5151,8 @@ diptera_hemiptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -5126,17 +5160,19 @@ diptera_hemiptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 diptera_hemiptera_plot_sr
 ```
@@ -5180,7 +5216,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 dip_hemi <- ggarrange(diptera_hemiptera_plot_ab, diptera_hemiptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/dip_hemi.png", dip_hemi, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/dip_hemi.png", dip_hemi, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -5362,8 +5398,8 @@ diptera_lepidoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -5371,18 +5407,20 @@ diptera_lepidoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 diptera_lepidoptera_plot_ab
 ```
@@ -5581,8 +5619,8 @@ diptera_lepidoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -5590,17 +5628,19 @@ diptera_lepidoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 diptera_lepidoptera_plot_sr
 ```
@@ -5644,7 +5684,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 dip_lep <- ggarrange(diptera_lepidoptera_plot_ab, diptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/dip_lep.png", dip_lep, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/dip_lep.png", dip_lep, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -5823,8 +5863,8 @@ hemiptera_lepidoptera_plot_ab <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -5832,18 +5872,20 @@ hemiptera_lepidoptera_plot_ab <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
     theme(axis.text.x = element_blank(),
           axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hemiptera_lepidoptera_plot_ab
 ```
@@ -6042,8 +6084,8 @@ hemiptera_lepidoptera_plot_sr <- combined %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 3, position = position_dodge(width = 0.5))+
-    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 2)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
     geom_vline(xintercept = 1.5, linetype = 2)+
@@ -6051,17 +6093,19 @@ hemiptera_lepidoptera_plot_sr <- combined %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    #geom_vline(xintercept = 6.5, linetype = 2)+ removed due to lower LU categories
-    #geom_vline(xintercept = 7.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
           axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
     ylab("(Log) Species richness difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
-      override.aes=list(shape = 15, size = 8))) +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+      override.aes=list(shape = 16, size = 8, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10))+
+    theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
   
 hemiptera_lepidoptera_plot_sr
 ```
@@ -6105,7 +6149,7 @@ a # correlation through the origin
 #### Arrrange two plots so they abbut and save them
 ```{r}
 hemi_lep <- ggarrange(hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-ggsave("./figures/log_figures_bycatch_removed/hemi_lep.png", hemi_lep, height = 9, width = 9)
+ggsave("../figures/log_figures_bycatch_removed/hemi_lep.png", hemi_lep, height = 10, width = 10)
 ```
 
 #### Tidy
@@ -6114,6 +6158,88 @@ rm(combined, corr_hemi_ref, corr_lep_ref, hemi_eff, hemi_lep, hemiptera_lepidopt
 ```
 
 
+```{r}
+# Number of data points
+
+n <- 5 # sv, plantation, pasture, cropland, urban
+
+# Degrees of freedom
+df <- n - 2
+
+# Critical t-value for two-tailed test at alpha = 0.05
+alpha <- 0.05
+t_critical <- qt(1 - alpha / 2, df)
+
+# Calculate critical r-value
+r_critical <- t_critical / sqrt(t_critical^2 + df)
+
+# Output the result
+r_critical
+
+# For your comment on calculating the threshold r for significance at p < 0.05 for the correlation coefficients (of either 4 or 5 data points depending on whether not plantation is included) and the unconstrained correlation costing 2 df, whereas through the origin costing only 1 df. Does this code look sensible?
+
+```
 
 
-#### Calculate number of sites / studies per comparison
+Correlation matrices
+```{r}
+# For each order extract the coefficients from ysv - urban 
+beetles <- as.matrix(summary(ab1)$coefficients)[2:8,1]
+flies <- as.matrix(summary(dip_m)$coefficients)[2:8,1]
+bugs <- as.matrix(summary(hemi_m)$coefficients)[2:8,1]
+bees <- as.matrix(summary(hym_m)$coefficients)[2:8,1]
+moths <- as.matrix(summary(lep_m)$coefficients)[2:8,1]
+
+
+# Create the dataframe (unconstrained, abundance and SR)
+df <- data.frame(
+  Coleoptera = c(0,-0.90,-0.80,0.71,-0.97),
+  Diptera = c(0.18, 0,-0.99,-0.88,-0.96),
+  Hemiptera = c(-0.874,-0.98, 0,-0.98,-0.79),
+  Hymenoptera = c(-0.076,-0.85,-0.96, 0,-0.95),
+  Lepidoptera = c(-0.72,-0.97, -0.77,-0.95, 0),
+  row.names = c("Coleoptera", "Diptera", "Hemiptera", "Hymenoptera", "Lepidoptera")
+)
+
+df <- as.matrix(df)
+
+
+
+# Combine them
+five <- cbind(beetles, flies, bugs, bees, moths)
+
+# Correlate
+pairs(five)
+cor(five)
+cor.test(beetles, flies)
+
+ 
+pairs(five,                     # Data frame of variables
+      labels = colnames(five),  # Variable names
+      pch = 21,                 # Pch symbol
+      main = "Correlations between five orders",    # Title of the plot
+      row1attop = TRUE,         # If FALSE, changes the direction of the diagonal
+      gap = 1,                  # Distance between subplots
+      cex.labels = NULL,        # Size of the diagonal text
+      font.labels = 1)          # Font style of the diagonal text
+
+
+library(corrplot)
+
+corrplot(cor(df),        # Correlation matrix
+         method = "circle", # Correlation plot method
+         type = "full",    # Correlation plot style (also "upper" and "lower")
+         diag = TRUE,      # If TRUE (default), adds the diagonal
+         tl.col = "black", # Labels color
+         bg = "white",     # Background color
+         title = "",       # Main title
+         col = NULL)       # Color palette
+
+
+corrplot((df), method = "circle")
+
+rm(ab1, col, combined, dip, dip_m, dip_ref, five, hemi, hemi_m, hemi_ref, hym, hym_m, hym_ref, lep, lep_m, lep_ref, bees, beetles, bugs, flies, moths)
+
+
+```
+
