@@ -1003,7 +1003,7 @@ hym_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -1202,7 +1202,7 @@ hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (
           axis.title.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -1413,7 +1413,7 @@ hym_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -1608,7 +1608,7 @@ hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -1822,7 +1822,7 @@ hym_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.ticks.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -2016,7 +2016,7 @@ hym_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
           axis.title.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -2235,7 +2235,7 @@ lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -2431,7 +2431,7 @@ lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -2645,7 +2645,7 @@ dip_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -2840,7 +2840,7 @@ dip_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -3053,7 +3053,7 @@ hemi_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -3247,7 +3247,7 @@ hemi_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + 
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) +  # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -3465,7 +3465,7 @@ lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -3661,7 +3661,7 @@ lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -3876,7 +3876,7 @@ hemi_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4071,7 +4071,7 @@ hemi_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
           axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4290,7 +4290,7 @@ lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4483,7 +4483,7 @@ lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
           axis.title.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4699,7 +4699,7 @@ lep_m1 <- lmer(logAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_
           axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Total abundance difference") +
+    ylab("Log (Total abundance)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4893,7 +4893,7 @@ lep_m1 <- lmer(logSR ~ Predominant_land_use * Higher_taxon + (1 | Source_ID),
           axis.text.y = element_text(size = 16),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("Log (Species richness)") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -4913,10 +4913,5 @@ ggsave("../figures/supp_figures/hemi_lep.png", hemi_lep, height = 10, width = 10
 #### Tidy
 ```{r}
 rm(combined, hemi_eff, hemi_lep, hemiptera_lepidoptera, hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_sr, hl_m3, lep_eff, lep_m1)
-```
-
-
-```{r}
-
 ```
 
