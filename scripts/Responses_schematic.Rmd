@@ -1257,11 +1257,11 @@ opposite_responses_schematic %>%
 
 
   # Blank plot for creating in powerpoint
-blank_plot_ab <- opposite_responses_schematic %>%
+blank_plot_ab <- same_responses_schematic %>%
     ggplot()+
     aes(x = Predominant_land_use, y = median, colour = Order, group = Order)+
     geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-    geom_point(size = 0, position = position_dodge(width = 0.5))+
+    #geom_point(size = 0, position = position_dodge(width = 0.5))+
     geom_linerange(aes(ymin = Upper_ci, ymax = Lower_ci), position = position_dodge(width = 0.5), linewidth = 0)+
     theme_classic()+
     scale_x_discrete(limits=comb_plot_limits)+
@@ -1270,13 +1270,13 @@ blank_plot_ab <- opposite_responses_schematic %>%
     geom_vline(xintercept = 3.5, linetype = 2)+
     geom_vline(xintercept = 4.5, linetype = 2)+
     geom_vline(xintercept = 5.5, linetype = 2)+
-    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
-          axis.text.y = element_text(size = 16),
-          axis.title.y = element_text(size = 16),  
+    theme(axis.text.x = element_text(size = 22, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 20),
+          axis.title.y = element_text(size = 22),  
           axis.title.x = element_blank(),
           panel.border = element_rect(colour = "black",  fill=NA))+
     xlab("Land use intensity class")+
-    ylab("(Log) Species richness difference") +
+    ylab("(Log) Total abundance difference") +
     scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
     guides(color = guide_legend(
       override.aes=list(shape = 16, size = 10, linetype = 0))) +
@@ -1284,6 +1284,8 @@ blank_plot_ab <- opposite_responses_schematic %>%
   theme(legend.title = element_text(face = "bold", size = 16),
         legend.text = element_text(size = 16)) 
 
-#ggsave("./figures/blank_plot_sr.pdf", blank_plot_ab, height = 10, width = 14)
+ggsave("../figures/blank_plot_ab.pdf", blank_plot_ab, height = 10, width = 14)
     
+
+unique(clean$Source_ID)
 ```
