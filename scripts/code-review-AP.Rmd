@@ -44,7 +44,7 @@ source("https://highstat.com/Books/Book2/HighstatLibV10.R") # collinearity
 #### Read in the data
 
 ```{r}
-diversity <- readRDS("/Users/andyp/R-projects/Isip_Multigroups/data/diversity-2023-09-14-02-33-21.rds")
+diversity <- readRDS("/Users/andyp/R-projects/Isip_Multigroups/data/diversity-2025-05-02-02-32-27.rds")
 ```
 
 #### First, I will find the studies which contain data for multiple insect groups subset at the source level, rather than the study level. 
