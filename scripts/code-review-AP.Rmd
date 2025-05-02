@@ -337,7 +337,7 @@ clean$Higher_taxon <- factor(clean$Higher_taxon, levels = sort(levels(clean$High
 # Tidy the environment
 rm(active_visual_surveys,baited_trap,bole_trap,flight_trap,glue_trap,larvae_keep,light_trap,live_trap,malaise_trap,pan_trap,pitfall_ants,pitfall_beetles,soil_sampling,suction,trap_nests,winkler_ants,winkler_beetles)
 
-saveRDS(clean, "diversity-2025-04-16-14-57-40.rds") # Saving the file to feed into pipe-line.
+saveRDS(clean, "diversity-2025-12-31-00-00-00.rds") # Saving the file to feed into pipe-line.
 # File name chosen so as to not upset later checks of name and date.
 
 ```
