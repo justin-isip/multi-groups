@@ -5,7 +5,7 @@ date: "2024-02-20"
 output: html_document
 ---
 
-#### 
+#### This markdown is a shortened version of the analysis for my first chapter. It first subsets multiple insect groups at the source rather than study level and then merges the two to have an overall multi-group dataset. I then update the sampling methods for those studies which have obscure sampling methods in the PREDICTS database. I then filter all of the PREDICTS methods for non-bycatch data based on both the expert survey and personal comms with entomologists. I then prepare the model data and calculate the site metrics. I then run the abundance and species richness models for two comparisons and also calculate the interaction importance using glmm.hp() and also run through the code for creating the plots based on the model outputs.
 
 
 
@@ -1046,6 +1046,7 @@ glmm.hp(hym_m1)
 # values are identical with the relevelled model, no need to do it for future models. 
 ```
 
+
 #### Tidy
 ```{r}
 rm(hc_m1, hymenoptera_coleoptera)
@@ -1679,4 +1680,6 @@ dip_hym
 #### Tidy
 ```{r}
 rm(combined, dip_eff, dip_hym, diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr, hd_m2, hym_eff, hym_m1, hymenoptera_diptera)
+
+model_data_ab %>% dplyr::select(SS, SSBS, SSBST, Order, Sampling_method, logAbundance) %>%  View()
 ```
