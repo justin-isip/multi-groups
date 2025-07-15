@@ -36,31 +36,15 @@ library(glmm.hp)
 #### Load functions
 
 ```{r}
-source("/Users/jusi/Desktop/PhD/Andy/data_prep_functions.R")
-source("/Users/jusi/Desktop/PhD/Andy/site_comparison_functions.R")
+source("data_prep_functions.R")
+source("site_comparison_functions.R")
 source("https://highstat.com/Books/Book2/HighstatLibV10.R") # collinearity
 ```
 
 #### Read in the data
 
 ```{r}
-diversity <- readRDS("/Users/jusi/Desktop/PhD/data/diversity-2023-09-14-02-33-21.rds")
-```
-
-#### Correct for sampling effort
-
-```{r}
-if(check_sampling_effort_nas(diversity) ==
-   FALSE) stop("Some studies have NA for sampling effort in only some sites!")
-
-diversity <- correct_for_sampling_effort(diversity)
-print(summarise_diversity(diversity))
-```
-
-#### Merge sites
-```{r}
-merged <- merge_sites(diversity, verbose = TRUE) 
-
+diversity <- readRDS("/Users/andyp/R-projects/Isip_Multigroups/data/diversity-2025-05-02-02-32-27.rds")
 ```
 
 #### First, I will find the studies which contain data for multiple insect groups subset at the source level, rather than the study level. 
@@ -69,7 +53,7 @@ merged <- merge_sites(diversity, verbose = TRUE)
 
 ```{r, warning = FALSE}
 # Subset multiple orders at the source level
-source_multiple <- merged %>% 
+source_multiple <- diversity %>% 
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
   group_by(Source_ID) %>%  
   mutate(
@@ -81,7 +65,7 @@ source_multiple <- merged %>%
   droplevels()
 
 # Subset multiple orders at the study level
-ss_multiple <- merged %>% 
+ss_multiple <- diversity %>% 
   filter(Higher_taxon %in% c("Diptera", "Coleoptera", "Lepidoptera", "Hymenoptera", "Hemiptera")) %>% 
   group_by(SS) %>%  
   mutate(
@@ -352,12 +336,33 @@ clean$Higher_taxon <- factor(clean$Higher_taxon, levels = sort(levels(clean$High
 
 # Tidy the environment
 rm(active_visual_surveys,baited_trap,bole_trap,flight_trap,glue_trap,larvae_keep,light_trap,live_trap,malaise_trap,pan_trap,pitfall_ants,pitfall_beetles,soil_sampling,suction,trap_nests,winkler_ants,winkler_beetles)
+
+saveRDS(clean, "diversity-2025-12-31-00-00-00.rds") # Saving the file to feed into pipe-line.
+# File name chosen so as to not upset later checks of name and date.
+
 ```
 
 #### Lets have a look at the appropriate sampling methods for each of the Orders.
 
 ```{r}
 clean %>% group_by(Order) %>% reframe(Sampling_method) %>% unique() 
+```
+
+
+#### Correct for sampling effort
+
+```{r}
+if(check_sampling_effort_nas(diversity) ==
+   FALSE) stop("Some studies have NA for sampling effort in only some sites!")
+
+diversity <- correct_for_sampling_effort(diversity)
+print(summarise_diversity(diversity))
+```
+
+#### Merge sites
+```{r}
+merged <- merge_sites(diversity, verbose = TRUE) 
+
 ```
 
 #### I will see if there are any sampling methods which are VALID for an Order if it was used in ANY study where that Order is the Order contributing most individuals to the data (not just the studies that have multiple orders).
