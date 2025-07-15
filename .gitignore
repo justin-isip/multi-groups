@@ -31,3 +31,7 @@ vignettes/*.pdf
 .RDataTmp2
 one_example.html
 .RDataTmp
+
+# Ignore data and admin file
+data/
+admin/
