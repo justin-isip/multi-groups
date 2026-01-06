@@ -36,3 +36,6 @@ one_example.html
 data/
 admin/
 utils.R
+
+# Large model outputs (keep local only)
+AllFitsModels/*.rds
