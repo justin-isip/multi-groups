@@ -39,3 +39,6 @@ utils.R
 
 # Large model outputs (keep local only)
 AllFitsModels/*.rds
+
+# Ignore occurrence model outputs
+Occurrence models/
