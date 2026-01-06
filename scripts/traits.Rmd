@@ -1,9 +1,19 @@
 ---
-title: "Untitled"
+title: "Traits analysis"
 output: html_document
 date: "2025-04-07"
+author: "Justin Isip"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    code_folding: hide
+    theme: flatly
 ---
-#### Clear the work space
+
+# Clear the work space
 
 ```{r}
 rm(list=ls())
@@ -20,6 +30,8 @@ library(qs)
 library(lmerTest)
 library(merTools) 
 library(performance)
+library(DHARMa)
+library(here)
 ```
 
 # Load in model plot function
@@ -49,10 +61,11 @@ model_plot <-function(mod.for.plot){
 }
 ```
 
-# Read in Logghe and tidy
+# Read in Logghe et al 2025 which has body sie data for ~ 4800 arthropod species and makes the bulk of the GLiTRS trait data set
+# Tidy and clean it to merge with PREDICTS trait data sets
 ```{r}
 # Upload logghe et al
-logghe <- read_excel("data/Body_Size_data.xlsx")
+logghe <- read_excel(here("data", "Body_Size_data.xlsx"))
 
 # keep only first 8 cols
 logghe <- logghe %>% dplyr::select(1:8)
@@ -65,7 +78,7 @@ logghe <- logghe[-1, ] # drop first row
 logghe <- logghe %>%
   separate(scientificName, into = c("Genus", "Species"), sep = " ", remove = FALSE, extra = "drop")
 
-# Combine genus and species for merging
+# Combine genus and species to create Best_guess_binomial which I will use to merge 
 logghe <- logghe %>% mutate(Best_guess_binomial = str_c(Genus, Species, sep = " "))
 
 # Reorder columns
@@ -79,14 +92,14 @@ logghe$Trait_Value <-  as.numeric(logghe$Trait_Value)
 # Read and tidy Geoffrey Su's ant trait data
 ```{r}
 # Load the data
-trait_ants <- read_excel("data/SuFormacidaeBodyLength-2014-05-23.xlsx")
+trait_ants <- read_excel(here("data", "SuFormacidaeBodyLength-2014-05-23.xlsx"))
 
 # Rename body length average column
 trait_ants <- trait_ants %>% rename(avg_body_length_mm = "Body.Length..mm...worker..AVG")
 
 # Lets remove those rows with NAs for body length
 trait_ants <- trait_ants %>%
-  filter(!is.na(avg_body_length_mm) & avg_body_length_mm != 0) # 559 rows with no body length data, 2 rows with BL = 0
+  filter(!is.na(avg_body_length_mm) & avg_body_length_mm != 0) # 559 rows with no body length data, 2 rows where BL = 0
 
 # Combine genus and species  
 trait_ants <- trait_ants %>% mutate(Best_guess_binomial = str_c(Genus, Species, sep = " "))
@@ -109,7 +122,7 @@ trait_ants <- trait_ants %>%
 # Read and tidy Melanie Edgars beetle trait data
 ```{r}
 # Load Melanies beetle trait data
-melanie_beetles <- read_excel("data/EdgarBeetleLength-2014-01-09.xlsx")
+melanie_beetles <- read_excel(here("data", "EdgarBeetleLength-2014-01-09.xlsx"))
 
 # Combine genus and species for merging
 melanie_beetles <- melanie_beetles %>% mutate(Best_guess_binomial = str_c(GENUS, SPECIES, sep = " "))
@@ -126,7 +139,7 @@ melanie_beetles <- melanie_beetles %>%
       (b_min + b_max) / 2  # Else if range, compute the average
     ))
 
-# Simplify beetles
+# Prepare and tidy beetles
 melanie_beetles <- melanie_beetles %>% 
   mutate(Order = "Coleoptera") %>% 
   dplyr::select(Order, FAMILY, GENUS, SPECIES, Best_guess_binomial, b.length_avg) %>% 
@@ -139,16 +152,16 @@ melanie_beetles <- melanie_beetles %>%
 # Read and tidy Rachel Tans bee trait data
 ```{r}
 # Load Rachel bee trait data
-rachel_bee <- read_excel("data/BeeTraits_P2_RachelTan.xlsx")
+rachel_bee <- read_excel(here("data", "BeeTraits_P2_RachelTan.xlsx"))
 
 # Create a genus and species column
 rachel_bee <- rachel_bee %>%
   separate(CorrectedName, into = c("Genus", "Species"), sep = " ", remove = FALSE, extra = "drop")
 
 # Filter for columns of interest
-rachel_bee <- rachel_bee %>% dplyr::select(HigherTaxon, Family, Genus, Species, CorrectedName, MidRangeBodyLength) %>% drop_na() # couple sp. with NA for body length
+rachel_bee <- rachel_bee %>% dplyr::select(HigherTaxon, Family, Genus, Species, CorrectedName, MidRangeBodyLength) %>% drop_na() # drop those sp. with NA for body length
 
-# Remove rows identified as "sp." or inside brackets e.g., (Dialictus) or (Psithyrus) which are subgenera
+# Remove rows identified as "sp." or inside brackets e.g., (Dialictus) or (Psithyrus) which are subgenera and not a true species name
 rachel_bee <- rachel_bee %>%
   filter(
     !str_detect(Species, "sp\\.") &         # remove rows with "sp."
@@ -180,7 +193,7 @@ all_traits_clean <- all_traits %>%
   group_by(Best_guess_binomial) %>%
   summarise(
     Trait_Value = mean(Trait_Value, na.rm = TRUE),  # average Trait_Value
-    across(.cols = -Trait_Value, .fns = ~ first(.x)),  # keep first value for other columns
+    across(.cols = -Trait_Value, .fns = ~ first(.x)),  # for each column, take the first value
     .groups = "drop"
   ) %>% 
   dplyr::select(Order, Family, Genus, Species, Best_guess_binomial, Trait_Value)
@@ -199,10 +212,7 @@ insects <-  qread("/Users/jusi/Desktop/multi-groups/data/predicts-prepared-whole
 # Clean and tidy PREDICTS data then merge trait dataset based on taxon resolution
 ```{r}
 # Get relevant taxon cols for all insects
-taxon_insects <- insects %>% dplyr::select(SS, SSBS, Order, Family, Genus, Species, Best_guess_binomial, Merged_diversity)
-
-# Get rid of rows which aren't at family level, i.e. at superfamily or higher
-#taxon_insects <- taxon_insects %>% filter(Family != "") # 58403 rows - Keep order rows for now!
+taxon_insects <- insects %>% dplyr::select(SS, SSBS, Order, Family, Genus, Species, Taxon_name_entered, Best_guess_binomial, Merged_diversity, Diversity_metric_unit)
 
 # Get rid of rows which aren't resolved to order level
 taxon_insects <- taxon_insects %>% filter(Order != "") # 1056 rows not resolved to order
@@ -236,7 +246,7 @@ family_value <- all_traits_clean %>%
   group_by(Family) %>%
   summarise(family_avg_body_length = mean(Trait_Value, na.rm = TRUE))
 
-# Merge based on family where genus and best_guess_binomial is empty
+# Merge based on family where genus and species is empty
 taxon_insects <- taxon_insects %>%
   left_join(family_value, by = "Family", suffix = c("", "_family")) 
 
@@ -249,24 +259,13 @@ taxon_insects <- taxon_insects %>%
     genus_avg_body_length,
     family_avg_body_length
   ))
-
-# How many rows have data based on each level of taxonomic resolution
-taxon_insects %>%
-  summarise(across(
-    c(Trait_Value,
-    genus_avg_body_length,
-    family_avg_body_length,
-    final_body_length),
-    list(
-      non_NAs = ~sum(!is.na(.))
-    )
-  ))
 ```
 
-# Tidy Rainford
+# Rainford et al 2014 provides min and max body length data for 760 insect families, I will calculate the average body length between the min and the max and then merge those values onto those rows in my data frame that do not yet have a body length value. 
+ 
 ```{r}
 # Upload 
-rainford <- read_excel("data/rainford_body_size.xlsx")
+rainford <- read_excel(here("data", "rainford_body_size.xlsx"))
 
 # Make first row the header
 colnames(rainford) <- as.character(rainford[1, ])
@@ -280,7 +279,7 @@ rainford <- rainford %>%
   filter(!if_all(everything(), is.na))
 
 # Convert cols to numeric
-rainford$min_bl <- as.numeric(rainford$min_bl)
+rainford$min_bl <- as.numeric(rainford$min_bl) # Odonata (Pseudolestidae) has an NA for BL hence the warning message
 rainford$max_bl <- as.numeric(rainford$max_bl)
 
 # Drop rows only to Order level
@@ -289,11 +288,11 @@ rainford <- rainford %>%
 
 # Calculate average body length
 rainford <- rainford %>%
-  mutate(family_avg = (min_bl + max_bl) / 2)
+  mutate(Rainford_family_avg = (min_bl + max_bl) / 2)
          
 # Simplify for merging
 rainford <- rainford %>% 
-  dplyr::select(c(-min_bl, -max_bl))
+  dplyr::select(c(-min_bl, -max_bl, -Order))
 ```
 
 # Merge Rainford 
@@ -303,9 +302,9 @@ rainford <- rainford %>%
 needs_family_avg <- taxon_insects %>%
   filter(is.na(Trait_Value) & is.na(genus_avg_body_length) & is.na(family_avg_body_length))
 
-# Step 2: Join family_avg from Rainford based on Family
+# Step 2: Join family_avg body size values from Rainford based on Family column
 needs_family_avg <- needs_family_avg %>%
-  left_join(rainford, dplyr::select(Family, family_avg), by = "Family")
+  left_join(rainford, dplyr::select(Family, Rainford_family_avg), by = "Family")
 
 # Step 3: Combine updated rows (need_family_avg) back into original data (taxon_insects)
 # First, remove the rows you updated from taxon_insects
@@ -319,7 +318,7 @@ nrow(taxon_insects) - nrow(needs_family_avg)
 taxon_insects_updated <- bind_rows(remaining_rows, needs_family_avg)
 
 # How many rows still without a family average
-sum(!is.na(taxon_insects_updated$family_avg)) # 134120
+sum(!is.na(taxon_insects_updated$Rainford_family_avg)) # 134120
 
 # How many rows have data based on each level of taxonomic resolution
 taxon_insects_updated %>%
@@ -328,7 +327,7 @@ taxon_insects_updated %>%
     genus_avg_body_length,
     family_avg_body_length,
     final_body_length,
-    family_avg),
+    Rainford_family_avg),
     list(
       non_NAs = ~sum(!is.na(.))
     )
@@ -337,21 +336,21 @@ taxon_insects_updated %>%
 rm(needs_family_avg, remaining_rows, taxon_insects)
 ```
 
-# Now that we have merged all the trait data, coalesce the family averages from Rainford into the final_body_length column
+# Now that we have merged all the trait data, coalesce the family averages from Rainford into the final_body_length column (for those rows that don't yet have a body length value at the family level) - if they already do then we stick with the earlier value from Logghe and the PREDICTS datasets.
 
 ```{r}
-# Replace missing values in final_body_length with the corresponding family_avg
+# Replace those rows with missing values in final_body_length with the corresponding family_avg
 taxon_insects_updated <- taxon_insects_updated %>%
-  mutate(final_body_length = coalesce(final_body_length, family_avg)) # coalesce(a,b) returns a if its not NA otherwise it returns b
+  mutate(final_body_length = coalesce(final_body_length, Rainford_family_avg)) # coalesce(a,b) returns a if its not NA otherwise it returns b
 
-# How many rows are still NA for body size - 71437
+# How many rows do we still not have a body size value for and are still NA - 71437
 taxon_insects_updated %>%
-  filter(is.na(Trait_Value) & is.na(genus_avg_body_length) & is.na(family_avg_body_length) & is.na(final_body_length) & is.na(family_avg)) %>%
+  filter(is.na(Trait_Value) & is.na(genus_avg_body_length) & is.na(family_avg_body_length) & is.na(final_body_length) & is.na(Rainford_family_avg)) %>%
   nrow()
 
 # Have a look at the rows
 taxon_insects_updated %>%
-  filter(is.na(Trait_Value) & is.na(genus_avg_body_length) & is.na(family_avg_body_length) & is.na(final_body_length) & is.na(family_avg)) %>% 
+  filter(is.na(Trait_Value) & is.na(genus_avg_body_length) & is.na(family_avg_body_length) & is.na(final_body_length) & is.na(Rainford_family_avg)) %>% 
   View()
 
 # Filter out rows which still don't have a body size value
@@ -361,32 +360,10 @@ all_insects_size <- taxon_insects_updated %>%
 
 ```
 
-# Some rows have NA for Order
-
-```{r}
-# Have a look at an example
-all_insects_size %>% filter(SS == "YL1_2023__Simba 1") %>% View()
-
-# Coalesce order column based on other cols
-all_insects_size <- all_insects_size %>%
-  mutate(
-    Order = coalesce(
-      na_if(as.character(Order), ""),
-      na_if(as.character(Order.x), ""),
-      na_if(as.character(Order.y), "")
-    )
-  )
-
-# Remove redundant cols
-all_insects_size <- all_insects_size %>%
-  dplyr::select(-Order.x, -Order.y)
-
-```
-
 # First split sites based on their latitude to tropical or temperate
 
 ```{r}
-# Filter overall predicts for latitude
+# Filter overall predicts for sites and their latitude
 latitude <- insects %>% dplyr::select(SSBS, Latitude) 
 
 # There are duplicated sites
@@ -407,9 +384,8 @@ all_insects_size$climate_zone <- ifelse(all_insects_size$Latitude >= -23.4368 & 
 
 # Read in allometry coefficients
 ```{r}
-coefficients <- read_excel("data/allometry_coefficients.xlsx")
+coefficients <- read_excel(here("data", "allometry_coefficients.xlsx"))
 ```
-
 
 # Merge allometry coefficients to size data
 ```{r}
@@ -417,17 +393,17 @@ coefficients <- read_excel("data/allometry_coefficients.xlsx")
 all_insects_size <- all_insects_size %>%
   left_join(coefficients, by = c("Order", "climate_zone"))
 
-# Step 2: Join fallback values for rows with missing a/b
-# First extract fallback values for All_insects
+# Step 2: Assign All_insects coefficients for all other taxa without order specific equations
+# First extract coefficients for All_insects
 fallback <- coefficients %>%
   filter(Order == "All_insects") %>%
   dplyr::select(climate_zone, a_fallback = a, b_fallback = b)
 
-# Step 3: Join fallback by climate_zone
+# Step 3: Join coefficients for All_insects based on whether its a tropical or temperate site
 all_insects_size <- all_insects_size %>%
   left_join(fallback, by = "climate_zone") %>%
   mutate(
-    a = if_else(is.na(a), a_fallback, a),
+    a = if_else(is.na(a), a_fallback, a), # if a is NA, assign it a for all_insects, else keep it as its order specific a
     b = if_else(is.na(b), b_fallback, b)
   ) %>%
   dplyr::select(-a_fallback, -b_fallback)
@@ -445,14 +421,126 @@ all_insects_size <- all_insects_size %>%
   )
 
 summary(all_insects_size$final_body_length) # no zero values for final_body_length
+any(all_insects_size$final_body_length == 0) # FALSE
 
-# Have a look
-all_insects_size %>% dplyr::select(SSBS, Order, final_body_length, Latitude, climate_zone, a, b, log10_mass, mass_mg) %>% View()
+rm(coefficients, fallback, latitude, rainford)
+```
+
+# Summary stats for methods
+
+```{r}
+# Number of species by order
+all_insects_size %>%
+  filter(!is.na(Best_guess_binomial)) %>% 
+  filter(Best_guess_binomial != "") %>% 
+  group_by(Order) %>%
+  summarise(n_species = n_distinct(Best_guess_binomial)) %>%
+  arrange(desc(n_species))  # Optional: orders by number of species
+
+# Number of species with species-level body length data
+ all_insects_size %>%
+  filter(!is.na(Trait_Value)) %>%
+  distinct(Best_guess_binomial) %>%
+  nrow()
+
+# Number of genera with genus-level body length data
+all_insects_size %>%
+  filter(!is.na(genus_avg_body_length)) %>%
+  distinct(Genus) %>%
+  nrow()
+
+# Number of families with family-level body length data
+all_insects_size %>%
+  filter(!is.na(family_avg_body_length)) %>%
+  distinct(Family) %>%
+  nrow()
+
+# Table X highlighting availability of body length data for numbers of species, genera and families across orders.
+order_summary <- all_insects_size %>%
+  # Keep only rows with body length data available
+  filter(!is.na(Trait_Value) | !is.na(genus_avg_body_length) | !is.na(family_avg_body_length | !is.na(Rainford_family_avg))) %>%
+  group_by(Order) %>%
+  summarise(
+    n_species = n_distinct(Best_guess_binomial[!is.na(Trait_Value)]),
+    n_genera  = n_distinct(Genus[!is.na(genus_avg_body_length)]),
+    n_families = n_distinct(Family[!is.na(family_avg_body_length) | !is.na(Rainford_family_avg)]) # two columns for family body length!
+  ) %>%
+  arrange(desc(n_species))  # Optional: sort by most species with data
+
+# View the result
+print(order_summary)
+
 ```
 
 
 # Analysis looking at ALL of the insects 
+
 # first lets calculate one weighted mean length value per site
+
+```{r}
+# Create a separate data frame for the overall site level analysis
+overall_site_size <- all_insects_size
+
+# Calculate the biomass of each taxa
+overall_site_size <- overall_site_size %>% 
+  mutate(
+    Biomass = mass_mg * Merged_diversity
+  )
+
+# Calculate TotalSiteBiomass, SmallestNonZeroTotalSiteBiomass for a site within a study and Log_plus_what
+overall_site_size <- overall_site_size %>%
+  group_by(SSBS) %>%
+  mutate(TotalSiteBiomass = sum(Biomass, na.rm = TRUE)) %>%  # Calculate total site biomass
+  ungroup() %>%
+  group_by(SS) %>% # Now group by study
+  mutate(
+    SmallestNonZeroTotalSiteBiomass = min(TotalSiteBiomass[TotalSiteBiomass > 0]), # Which site has the smallest total biomass greater than 0 per study? 
+    Log_plus_what = ifelse(
+    Diversity_metric_unit %in% c("individuals", "times observed"), min(mass_mg, na.rm = TRUE),  
+    # If abundance data are counts, assign the smallest mass_mg for an individual of any species in the study
+    SmallestNonZeroTotalSiteBiomass / 2)) %>%  # else 1/2 the SmallestNonZeroTotalSiteBiomass for any site within the study 
+  ungroup() %>% 
+  group_by(SSBS) %>% 
+  mutate(LogBiomass = log(TotalSiteBiomass + Log_plus_what)) %>% 
+  ungroup()
+    
+# Have a look
+overall_site_size %>% dplyr::select(SS, SSBS, Merged_diversity, mass_mg, Biomass, Diversity_metric_unit, TotalSiteBiomass, SmallestNonZeroTotalSiteBiomass, Log_plus_what, LogBiomass) %>% unique() %>%  View()
+    
+overall_site_size %>%  filter(SS == "VB1_2023__Hendy 3") %>%  dplyr::select(SS, SSBS, Merged_diversity, mass_mg, Biomass, Diversity_metric_unit, TotalSiteBiomass, SmallestNonZeroTotalSiteBiomass, Log_plus_what, LogBiomass) %>% unique() %>%  View()  
+
+# Calculate one LogBiomass value per site
+LogBiomass_summary <- overall_site_size %>%
+  group_by(SSBS) %>%
+  summarise(
+    n_TSB = n_distinct(TotalSiteBiomass), 
+    n_LPW = n_distinct(Log_plus_what),
+    is_consistent = (n_TSB == 1 & n_LPW == 1), # sense check that all TotalSiteBiomass and Log_plus_what values are the same for all rows in the site
+    TotalSiteBiomass = first(TotalSiteBiomass),
+    Log_plus_what = first(Log_plus_what),
+    LogBiomass = log(first(TotalSiteBiomass) + first(Log_plus_what)),
+    .groups = "drop"
+  )
+
+# All sites are consistent
+LogBiomass_summary %>% filter(is_consistent != TRUE)
+
+inconsistent_groups <- overall_site_size %>%
+  group_by(SSBS) %>%
+  summarise(
+    n_TSB = n_distinct(TotalSiteBiomass),
+    n_LPW = n_distinct(Log_plus_what)
+  ) %>%
+  filter(n_TSB > 1 | n_LPW > 1) 
+
+# No rows where LogBiomass is 0, NA, or blank
+LogBiomass_summary %>%
+  filter(is.na(LogBiomass) | LogBiomass == 0 | LogBiomass == "") %>% View()
+
+rm(inconsistent_groups)
+```
+
+# OLD CODE FOR CALCULATING LogBiomass
 ```{r}
 # Create a separate data frame for the overall site level analysis as we'll use all_insects_size to calculate order by order
 overall_site_size <- all_insects_size
@@ -475,8 +563,7 @@ logMass_summary <- overall_site_size %>%
     total_div = sum(Merged_diversity, na.rm = TRUE),
     relAb_sum = sum(relativeAb_logMass, na.rm = TRUE),
     logMass_total = ifelse(total_div > 0, relAb_sum + log(total_div), NA_real_) # this addresses -Inf values due to sites with 0 merged diversity, i.e. taking a log of 0.
-  ) %>%
-  dplyr::select(SSBS, logMass_total)
+  ) 
 
 # Have a look at the worked exampled
 logMass_summary %>% filter(SSBS == "AD1_2009__Vergara 1  6") %>% View()
@@ -494,26 +581,30 @@ rm(coefficients, fallback, latitude)
 insects_single <- insects %>%
   distinct(SSBS, .keep_all = TRUE)
 
-# merge logMass_total values
+# merge LogBiomass_summary values
 final_size <- insects_single %>%
-  left_join(logMass_summary, by = "SSBS") %>% 
+  left_join(LogBiomass_summary, by = "SSBS") %>% 
   droplevels()
 
-# filter out sites with no logMass_total 
+# Have a look at sites with no LogBiomass
+no_biomass <- final_size %>%
+  filter(
+    is.na(LogBiomass) |         # remove NA
+    is.nan(LogBiomass)|        # remove NaN
+    LogBiomass == ""            # remove empty strings
+  )  # I think this is because these rows do not have a body size value, therefore no LogBiomass value. 
+
+# filter out sites with no LogBiomass 
 final_size <- final_size %>%
   filter(
-    !is.na(logMass_total),         # remove NA
-    !is.nan(logMass_total),        # remove NaN
-    logMass_total != 0,            # remove 0
-    logMass_total != ""            # remove empty strings
+    !is.na(LogBiomass),         # remove NA
+    !is.nan(LogBiomass),        # remove NaN
+    LogBiomass != ""            # remove empty strings
   )
 
-# 12918 sites in total
+# 14009 sites in total
 
-rm(insects_single)
-
-
-table(all_insects_size$Order)
+rm(insects_single, no_biomass, LogBiomass_summary)
 ```
 
 # Load additional explanatory variables
@@ -630,8 +721,6 @@ final_size <- final_size %>%
 
 # Have a look at sample sizes
 table(final_size$LUI)
-
-final_size %>% dplyr::select(SS, SSBS, Order, Predominant_land_use, Use_intensity, LUI, logMass_total) %>% View()
 ```
 
 # Create NatOrHumDom
@@ -672,41 +761,66 @@ final_size %>%
   View()
 
 # drop all rows with NAs for land use and use intensity and drop empty levels
-model_data_size <- drop_na(final_size, Predominant_land_use, Use_intensity) %>% droplevels() 
+model_data_biomass <- drop_na(final_size, Predominant_land_use, Use_intensity) %>% droplevels() 
 
 # drop all rows for additional variables for modelling
-model_data_t30 <- drop_na(final_size, Predominant_land_use, Use_intensity, log_t30_scaled, nathab_scaled) %>% droplevels()
+#model_data_t30 <- drop_na(final_size, Predominant_land_use, Use_intensity, log_t30_scaled, nathab_scaled) %>% droplevels()
 
 # check distributions
-hist(model_data_size$logMass_total)
-hist(model_data_t30$log_t30_scaled)
-hist(model_data_t30$nathab_scaled)
+hist(model_data_biomass$LogBiomass)
+#hist(model_data_t30$log_t30_scaled)
+#hist(model_data_t30$nathab_scaled)
 
 # Have a look at sample sizes
-table(model_data_size$Predominant_land_use, model_data_size$Use_intensity)
-table(model_data_size$LUI)
+table(model_data_biomass$Predominant_land_use, model_data_biomass$Use_intensity)
+table(model_data_biomass$LUI)
 
-length(unique(model_data_size$SS)) # 444 studies 
-length(unique(model_data_size$SSBS)) # 10520 sites
+length(unique(model_data_biomass$SS)) # 444 studies 
+length(unique(model_data_biomass$SSBS)) # 11516 sites
 
-length(unique(model_data_t30$SS)) # 402 studies 
-length(unique(model_data_t30$SSBS)) # 9773 sites
+#length(unique(model_data_t30$SS)) # 402 studies 
+#length(unique(model_data_t30$SSBS)) # 9773 sites
+
+
+table(model_data_biomass$Region)
+
+rm(add_var, final_size, logMass_summary, model_data_t30, overall_site_size)
 ```
 
-# Modelling size ~ LU and creating the LU plot for all insects
+# Have a look at temperate versus tropical split for log biomass model data
+
+```{r}
+# Filter overall predicts for sites and their latitude
+latitude <- model_data_biomass %>% dplyr::select(SSBS, Latitude) 
+
+# There are duplicated sites
+any(duplicated(latitude$SSBS))
+
+# Lets get a list of distinct sites
+latitude <- latitude %>% distinct(SSBS, .keep_all = TRUE)
+
+# Add a new column classifying each site into tropical or temperate
+latitude$climate_zone <- ifelse(latitude$Latitude >= -23.4368 & latitude$Latitude <= 23.4368, 
+                          "tropical", 
+                          "temperate")
+
+table(latitude$climate_zone)
+```
+
+# Modelling LogBiomass ~ LU and creating the LU plot for all insects
 
 ```{r}
 # maximal model
-m1 <- lmer(logMass_total ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
-           data = model_data_size)
+m1 <- lmer(LogBiomass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_biomass)
 
 # remove block
-m2 <-lmer(logMass_total ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
-    data = model_data_size)
+m2 <-lmer(LogBiomass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
+    data = model_data_biomass)
 
 # remove study
-m3 <-lmer(logMass_total ~ Predominant_land_use + (1 | Source_ID),
-    data = model_data_size)
+m3 <-lmer(LogBiomass ~ Predominant_land_use + (1 | Source_ID),
+    data = model_data_biomass)
 
 AIC(m1, m2, m3) # m1 best model
 
@@ -773,30 +887,33 @@ eff <- FEsim(m1, n.sims = 1000)
               axis.title.y = element_text(face = "bold"),
               panel.border = element_rect(colour = "black",  fill=NA))+
         xlab("Land use intensity class")+
-        ylab("log10(biomass) difference (%)") +
+        ylab("log(biomass) difference (%)") +
         guides(color = guide_legend(
           override.aes=list(shape = 15, size = 10)))
      
-  #ggsave(filename = "figures/biomass_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
+  #ggsave(filename = "../figures/biomass_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
 
-  
+biomass_eff <- eff %>% mutate(Variable = "Biomass")
+
+
+       
 rm(eff, m1, m2, m3, p)     
 ```
 
-# Modelling size ~ LUI (LU + UI) and creating the LUI plot for all insects
+# Modelling LogBiomass ~ LUI (LU + UI) and creating the LUI plot for all insects
 
 ```{r}
 # maximal model
-m1 <- lmer(logMass_total ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
-           data = model_data_size)
+m1 <- lmer(LogBiomass ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_biomass)
 
 # remove block
-m2 <-lmer(logMass_total ~ LUI + (1 | Source_ID) + (1 | SS),
-    data = model_data_size)
+m2 <-lmer(LogBiomass ~ LUI + (1 | Source_ID) + (1 | SS),
+    data = model_data_biomass)
 
 # remove study
-m3 <-lmer(logMass_total ~ LUI + (1 | Source_ID),
-    data = model_data_size)
+m3 <-lmer(LogBiomass ~ LUI + (1 | Source_ID),
+    data = model_data_biomass)
 
 AIC(m1, m2, m3) # m1 best model
 
@@ -814,28 +931,28 @@ eff <- FEsim(m1, n.sims = 1000)
   eff$term <- as.factor(eff$term)
   
   # rename factors for ease of visualisation
-  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary_minimal",
-                            "LUIPrimary_Light_use" = "Primary_light",
-                                "LUIPrimary_Intense_use" = "Primary_intense",
-                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV_minimal",
-                            "LUIYoung_secondary_vegetation_Light_use" = "YSV_light",
-                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV_intense",
-                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV_minimal",
-                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV_high",
-                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV_minimal",
-                            "LUIMature_secondary_vegetation_High_use" = "MSV_high",
-                            "LUIPlantation_forest_Minimal_use" = "Plantation_minimal",
-                            "LUIPlantation_forest_Light_use" = "Plantation_light",
-                            "LUIPlantation_forest_Intense_use" = "Plantation_intense",
-                            "LUIPasture_Minimal_use" = "Pasture_minimal",
-                            "LUIPasture_Light_use" = "Pasture_light",
-                            "LUIPasture_Intense_use" = "Pasture_intense",
-                            "LUICropland_Minimal_use" = "Cropland_minimal",
-                            "LUICropland_Light_use" = "Cropland_light",
-                            "LUICropland_Intense_use" = "Cropland_intense",
-                            "LUIUrban_Minimal_use" = "Urban_minimal",
-                            "LUIUrban_Light_use" = "Urban_light",
-                            "LUIUrban_Intense_use" = "Urban_intense")
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary (minimal)",
+                            "LUIPrimary_Light_use" = "Primary (light)",
+                                "LUIPrimary_Intense_use" = "Primary (intense)",
+                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV (minimal)",
+                            "LUIYoung_secondary_vegetation_Light_use" = "YSV (light)",
+                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV (intense)",
+                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV (minimal)",
+                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV (high)",
+                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV (minimal)",
+                            "LUIMature_secondary_vegetation_High_use" = "MSV (high)",
+                            "LUIPlantation_forest_Minimal_use" = "Plantation (minimal)",
+                            "LUIPlantation_forest_Light_use" = "Plantation (light)",
+                            "LUIPlantation_forest_Intense_use" = "Plantation (intense)",
+                            "LUIPasture_Minimal_use" = "Pasture (minimal)",
+                            "LUIPasture_Light_use" = "Pasture (light)",
+                            "LUIPasture_Intense_use" = "Pasture (intense)",
+                            "LUICropland_Minimal_use" = "Cropland (minimal)",
+                            "LUICropland_Light_use" = "Cropland (light)",
+                            "LUICropland_Intense_use" = "Cropland (intense)",
+                            "LUIUrban_Minimal_use" = "Urban (minimal)",
+                            "LUIUrban_Light_use" = "Urban (light)",
+                            "LUIUrban_Intense_use" = "Urban (intense)")
                         
   # Add in upper and lower confidence intervals 
   eff <- eff %>%
@@ -861,8 +978,8 @@ eff <- FEsim(m1, n.sims = 1000)
         ggplot()+
         aes(x = Predominant_land_use, y = Percent_diff)+
         geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-        geom_point(size = 3)+
-        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1)+
+        geom_point(size = 3, colour = "purple")+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1, colour = "purple")+
         theme_classic()+
         geom_vline(xintercept = 3.5, linetype = 2)+
         geom_vline(xintercept = 6.5, linetype = 2)+
@@ -877,12 +994,14 @@ eff <- FEsim(m1, n.sims = 1000)
               axis.title.y = element_text(face = "bold"),
               panel.border = element_rect(colour = "black",  fill=NA))+
         xlab("Land use intensity class")+
-        ylab("log10(biomass) difference (%)") +
+        ylab("log(biomass) difference (%)") +
         guides(color = guide_legend(
           override.aes=list(shape = 15, size = 10)))
      
-       ggsave(filename = "figures/biomass_LUI.png",  plot = p, width = 8, height = 7, dpi = 300)
-     
+       #ggsave(filename = "../figures/biomass_LUI.png",  plot = p, width = 8, height = 7, dpi = 300)
+
+#biomass_LUI_eff <- eff %>% mutate(Variable = "Biomass")    
+  
 rm(eff, m1, m2, m3, p)     
 ```
 
@@ -978,7 +1097,7 @@ eff <- FEsim(m1, n.sims = 1000)
         guides(color = guide_legend(
           override.aes=list(shape = 15, size = 10)))
      
-rm(eff, m1, m2, m3, final_size, logMass_summary, model_data_size, overall_site_size)     
+rm(eff, m1, m2, m3, final_size, logMass_summary, model_data_biomass, overall_site_size)     
 ```
 
 # Model simplification
@@ -1067,7 +1186,69 @@ orders_size <- orders_size %>%
 unique(orders_size$Order)
 ```
 
-# the big five orders - up to five size values per site
+
+# (NEW CODE) the big five orders - up to five size values per site
+
+```{r}
+# Calculate the biomass of each taxa
+orders_size <- orders_size %>% 
+  mutate(
+    Biomass = mass_mg * Merged_diversity
+  )
+
+orders_size <- orders_size %>%
+  group_by(SSBS, Order) %>% # Calculate for each site x order combination
+  mutate(TotalSiteOrderBiomass = sum(Biomass, na.rm = TRUE)) %>%  # Calculate total site biomass for each order 
+  ungroup() %>%
+  group_by(SS) %>% # Now group by study
+  mutate(
+    SmallestNonZeroTotalSiteOrderBiomass = min(TotalSiteOrderBiomass[TotalSiteOrderBiomass > 0]), # Which site x order combo has the smallest total biomass greater than 0 per study? 
+    Log_plus_what = ifelse(
+    Diversity_metric_unit %in% c("individuals", "times observed"), min(mass_mg, na.rm = TRUE),  
+    # If abundance data are counts, assign the smallest mass_mg for an individual of any species in the study
+    SmallestNonZeroTotalSiteOrderBiomass / 2)) %>%  # else 1/2 the SmallestNonZeroTotalSiteOrderBiomass for any site within the study 
+  ungroup() %>% 
+  group_by(SSBS, Order) %>%  # Calculate for each site x order combination
+  mutate(LogBiomass = log(TotalSiteOrderBiomass + Log_plus_what)) %>% 
+  ungroup()
+    
+# Have a look
+orders_size %>% dplyr::select(SS, SSBS, Order, Merged_diversity, mass_mg, Biomass, Diversity_metric_unit, TotalSiteOrderBiomass, SmallestNonZeroTotalSiteOrderBiomass, Log_plus_what, LogBiomass) %>% unique() %>%  View()
+    
+orders_size %>%  filter(SSBS == "AD1_2002__Vazquez 1 1 1") %>%  dplyr::select(SS, SSBS, Order, Merged_diversity, mass_mg, Biomass, Diversity_metric_unit, TotalSiteOrderBiomass, SmallestNonZeroTotalSiteOrderBiomass, Log_plus_what, LogBiomass) %>% unique() %>%  View()  
+
+# Calculate one LogBiomass value per site x order combination
+LogBiomass_summary <- orders_size %>%
+  group_by(SSBS, Order) %>%
+  summarise(
+    n_TSOB = n_distinct(TotalSiteOrderBiomass), 
+    n_LPW = n_distinct(Log_plus_what),
+    is_consistent = (n_TSOB == 1 & n_LPW == 1), # sense check that all TotalSiteOrderBiomass and Log_plus_what values are the same for all rows in the site x order combination
+    TotalSiteBiomass = first(TotalSiteOrderBiomass),
+    Log_plus_what = first(Log_plus_what),
+    LogBiomass = log(first(TotalSiteBiomass) + first(Log_plus_what)),
+    .groups = "drop"
+  )
+
+# All sites are consistent
+LogBiomass_summary %>% filter(is_consistent != TRUE)
+
+inconsistent_groups <- orders_size %>%
+  group_by(SSBS, Order) %>%
+  summarise(
+    n_TSB = n_distinct(TotalSiteOrderBiomass),
+    n_LPW = n_distinct(Log_plus_what)
+  ) %>%
+  filter(n_TSB > 1 | n_LPW > 1) 
+
+# No rows where LogBiomass is 0, NA, or blank
+LogBiomass_summary %>%
+  filter(is.na(LogBiomass) | LogBiomass == 0 | LogBiomass == "") %>% View()
+
+rm(inconsistent_groups)
+```
+
+# (OLD CODE) the big five orders - up to five size values per site
 ```{r}
 # Calculate abundance weighted log mass per Order
 orders_size <- orders_size %>%
@@ -1114,30 +1295,38 @@ insects <- insects %>%
 ssbs_by_order <- insects %>%
   distinct(SSBS, Order, .keep_all = TRUE) # 23,381 sites!
 
-# merge logMass_total values
-mass_by_order <- ssbs_by_order %>%
-  left_join(logMass_summary, by = c("SSBS", "Order")) %>% 
+# merge LogBiomass_summary values
+BiomassByOrder <- ssbs_by_order %>%
+  left_join(LogBiomass_summary, by = c("SSBS", "Order")) %>% 
   droplevels()
 
-
-# filter out sites with no logMass_total
-mass_by_order <- mass_by_order %>%
+# Have a look at sites with no LogBiomass
+no_biomass <- BiomassByOrder %>%
   filter(
-    !is.na(logMass_total),         # remove NA
-    !is.nan(logMass_total),        # remove NaN
-    logMass_total != 0,            # remove 0
-    logMass_total != ""            # remove empty strings
+    is.na(LogBiomass) |         # remove NA
+    is.nan(LogBiomass)|        # remove NaN
+    LogBiomass == ""            # remove empty strings
+  )  # I think this is because these rows do not have a body size value, therefore no LogBiomass value. 
+
+taxon_insects_updated %>% filter(SSBS == "AD1_2002__Vazquez 1 1 1") %>% View()
+
+# filter out sites with no LogBiomass
+BiomassByOrder <- BiomassByOrder %>%
+  filter(
+    !is.na(LogBiomass),         # remove NA
+    !is.nan(LogBiomass),        # remove NaN
+    LogBiomass != ""            # remove empty strings
   )
 
-sum(!is.na(logMass_summary$logMass_total)) # number of site x order combos with data, sensitivity check as should match number of sites in mass_by_order 
+sum(!is.na(LogBiomass_summary$LogBiomass)) # number of site x order combos with data, sensitivity check as should match number of sites in BiomassByOrder 
 
-rm(ssbs_by_order)
+rm(ssbs_by_order, no_biomass, LogBiomass_summary, orders_size)
 ```
 
 # Prep model data
 ```{r}
 # Create model data
-big_five <- mass_by_order 
+big_five <- BiomassByOrder 
 
 # Lets look at the number of sites per order
 big_five %>%
@@ -1157,9 +1346,16 @@ big_five <- big_five %>%
                                          "Primary forest" = "Primary", 
                                          "Primary non-forest" = "Primary"),
     # indeterminate secondary veg and cannot decide get NA
-   Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
+   #Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
     Predominant_land_use = na_if(Predominant_land_use, "Cannot decide"), 
     Use_intensity = na_if(Use_intensity, "Cannot decide"),
+   
+       # collapse secondary age categories into one and include SV (indeterminate age)
+    Predominant_land_use = recode_factor(Predominant_land_use, 
+                                         "Young secondary vegetation" = "Secondary vegetation", 
+                                         "Intermediate secondary vegetation" = "Secondary vegetation",
+                                         "Mature secondary vegetation" = "Secondary vegetation",
+                                         "Secondary vegetation (indeterminate age)" = "Secondary vegetation"),
     
     # set reference levels
     Predominant_land_use = factor(Predominant_land_use),
@@ -1168,8 +1364,8 @@ big_five <- big_five %>%
     Use_intensity = relevel(Use_intensity, ref = "Minimal use")
   )
 
-# take a look at the LandUse/Use intensity split
-table(big_five$Predominant_land_use, big_five$Use_intensity)
+table(big_five$Order, big_five$Predominant_land_use)
+
 ```
 
 # Collinearity
@@ -1185,20 +1381,24 @@ corvif(big_five[ , c("Predominant_land_use", "Use_intensity")])
 # Lets have a look at rows with an NA for land use or use intensity
 big_five %>%
   filter(if_any(c(Predominant_land_use, Use_intensity), is.na)) %>% 
-  dplyr::select(SS, SSBS, Predominant_land_use, logMass_total, Use_intensity) %>% 
+  dplyr::select(SS, SSBS, Predominant_land_use, LogBiomass, Use_intensity) %>% 
   View()
 
 # drop all rows with NAs for land use and use intensity and drop empty levels
 big_five <- drop_na(big_five, Predominant_land_use, Use_intensity) %>% droplevels() 
 
-# check distribution of logMass
-hist(big_five$logMass_total)
+# check distribution of LogBiomass
+hist(big_five$LogBiomass)
 
 # Have a look at sample sizes
 table(big_five$Predominant_land_use, big_five$Use_intensity)
+table(big_five$Order, big_five$Predominant_land_use)
 
-length(unique(big_five$SS)) # 444 studies
-length(unique(big_five$SSBS)) # 10520 sites
+length(unique(big_five$SS)) # 455 studies
+length(unique(big_five$SSBS)) # 12232 sites
+
+# Save the data frame for ease in the future
+#saveRDS(big_five, "BigFiveBiomass.rds")
 ```
 
 # Modelling biomass ~ LU * Order
@@ -1209,15 +1409,15 @@ big_five <- big_five %>%
   mutate(Order = as.factor(Order))
 
 # maximal model
-m1 <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+m1 <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = big_five)
 
 # remove block
-m2 <-lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS),
+m2 <-lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS),
     data = big_five)
 
 # remove study
-m3 <-lmer(logMass_total ~ Predominant_land_use + (1 | Source_ID),
+m3 <-lmer(LogBiomass ~ Predominant_land_use + (1 | Source_ID),
     data = big_five)
 
 AIC(m1, m2, m3) # m1 best model
@@ -1240,13 +1440,13 @@ col_eff <- FEsim(m1, n.sims = 1000)
   
    # pull out effects
   col_eff <- col_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   col_eff$term <- recode_factor(col_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1288,7 +1488,7 @@ rm(m1)
 dip_ref <- within(big_five, Order <- relevel(Order, ref = "Diptera"))
 
 # dip model
-dip_m <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+dip_m <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = dip_ref)
 
 summary(dip_m) 
@@ -1301,13 +1501,13 @@ dip_eff <- FEsim(dip_m, n.sims = 1000)
   
    # pull out effects
   dip_eff <- dip_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   dip_eff$term <- recode_factor(dip_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1349,7 +1549,7 @@ rm(dip_ref, dip_m)
 hemi_ref <- within(big_five, Order <- relevel(Order, ref = "Hemiptera"))
 
 # dip model
-hemi_m <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+hemi_m <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = hemi_ref)
 
 summary(hemi_m) 
@@ -1362,13 +1562,13 @@ hemi_eff <- FEsim(hemi_m, n.sims = 1000)
   
    # pull out effects
   hemi_eff <- hemi_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   hemi_eff$term <- recode_factor(hemi_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1410,7 +1610,7 @@ rm(hemi_ref, hemi_m)
 hym_ref <- within(big_five, Order <- relevel(Order, ref = "Hymenoptera"))
 
 # dip model
-hym_m <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+hym_m <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = hym_ref)
 
 summary(hym_m) 
@@ -1423,13 +1623,13 @@ hym_eff <- FEsim(hym_m, n.sims = 1000)
   
    # pull out effects
   hym_eff <- hym_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   hym_eff$term <- recode_factor(hym_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1471,7 +1671,7 @@ rm(hym_ref, hym_m)
 lep_ref <- within(big_five, Order <- relevel(Order, ref = "Lepidoptera"))
 
 # dip model
-lep_m <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+lep_m <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = lep_ref)
 
 summary(lep_m) 
@@ -1484,13 +1684,13 @@ lep_eff <- FEsim(lep_m, n.sims = 1000)
   
    # pull out effects
   lep_eff <- lep_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   lep_eff$term <- recode_factor(lep_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1532,7 +1732,7 @@ rm(lep_ref, lep_m)
 other_ref <- within(big_five, Order <- relevel(Order, ref = "Other_orders"))
 
 # other_orders model
-other_m <- lmer(logMass_total ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+other_m <- lmer(LogBiomass ~ Predominant_land_use * Order + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
            data = other_ref)
 
 summary(other_m) 
@@ -1545,13 +1745,13 @@ other_eff <- FEsim(other_m, n.sims = 1000)
   
    # pull out effects
   other_eff <- other_eff %>%
-    slice(1:8) 
+    slice(1:6) 
   
   # rename factors for ease of visualisation
   other_eff$term <- recode_factor(other_eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                #"Predominant_land_useYoung secondary vegetation" = "YSV",
+                                #"Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                #"Predominant_land_useMature secondary vegetation" = "MSV",
                                 "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
                                 "Predominant_land_usePlantation forest" = "Plantation",
                                 "Predominant_land_usePasture" = "Pasture",
@@ -1584,7 +1784,7 @@ other_eff <- FEsim(other_m, n.sims = 1000)
   # make the order column a factor so it can be recoded
    other_eff$Order <- as.factor(other_eff$Order)     
       
-rm(other_ref, lep_m)
+rm(other_ref, lep_m, other_m)
 ```
 
 # Combine the effects and plot them
@@ -1592,43 +1792,139 @@ rm(other_ref, lep_m)
 combined <- rbind(col_eff, dip_eff, hemi_eff, hym_eff, lep_eff, other_eff)
 
 # Add land-use factors for plotting
-comb_plot_limits <- c("Primary", "YSV", "ISV", "MSV", "Plantation", "Pasture", "Cropland", "Urban") 
+comb_plot_limits <- c("Primary", "Secondary vegetation", "Plantation", "Pasture", "Cropland", "Urban") 
 
 # Add specific colours for each order
-group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#900c3f", Coleoptera = "#581845", Other_orders = "coral4")
+group_colours <- c(
+  "#1b9e77", "#d95f02", "#7570b3",
+  "#e7298a", "#66a61e", "#e6ab02"
+)
 
-       p <- combined %>%
-        ggplot()+
-        aes(x = Predominant_land_use, y = Percent_diff, colour = Order, group = Order)+
-        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-        geom_point(size = 3, position = position_dodge(width = 0.5))+
-        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), position = position_dodge(width = 0.5), linewidth = 1)+
-        theme_classic()+
-        scale_x_discrete(limits=comb_plot_limits)+
-        geom_vline(xintercept = 1.5, linetype = 2)+
-        geom_vline(xintercept = 2.5, linetype = 2)+
-        geom_vline(xintercept = 3.5, linetype = 2)+
-        geom_vline(xintercept = 4.5, linetype = 2)+
-        geom_vline(xintercept = 5.5, linetype = 2)+
-        geom_vline(xintercept = 6.5, linetype = 2)+
-        geom_vline(xintercept = 7.5, linetype = 2)+
-        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
-              axis.title.x = element_blank(),
-              axis.title.y = element_text(face = "bold"),
-              panel.border = element_rect(colour = "black",  fill=NA))+
-        xlab("Land use intensity class")+
-        ylab("Total log mass difference (%)") +
-        scale_colour_manual(values=group_colours) + # this overrides the colours for the groups as above
-        guides(color = guide_legend(
-          override.aes=list(shape = 15, size = 10)))
+combined <- combined[-c(27,33),]
+
+  p <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = Percent_diff, colour = Order, group = Order) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper),
+                 position = position_dodge(width = 0.5), linewidth = 1) +
+  theme_classic() +
+  scale_x_discrete(limits = comb_plot_limits) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  theme(
+    axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.position = "bottom"        # 👈 Move legend
+  ) +
+  xlab("Land use intensity class") +
+  ylab("log(biomass) difference (%)") +
+  scale_colour_manual(values = group_colours) +
+  guides(color = guide_legend(override.aes = list(shape = 19, size = 3))) +  # 👈 round icons
+  scale_colour_manual(
+  values = group_colours,
+  labels = c("Coleoptera", "Diptera", "Hemiptera", "Hymenoptera",
+             "Lepidoptera", "Other orders") # Change Other_orders to Other orders
+) +
+theme(
+  legend.title = element_text(face = "bold")
+) +
+  scale_y_continuous(breaks = seq(-100, 150, by = 25))
+
+
+ 
         
-#ggsave(filename = "figures/big_five_LU.png",  plot = p, width = 14, height = 10, dpi = 300)
+#ggsave(filename = "../figures/C3 figures/big_five_LU_second.png",  plot = p, width = 8, height = 6, dpi = 300)
+#saveRDS(combined, "/Users/jusi/Desktop/multi-groups/C3 data/C3-BigFive-AllEffectsCombined.rds")
 
-rm(col_eff, combined, dip_eff, hemi_eff, hym_eff, latitude, lep_eff, logMass_summary, coefficients)
+rm(col_eff, combined, dip_eff, hemi_eff, hym_eff, lep_eff, p, other_eff)
+```
+
+# Average mass of an insect at a site (FOR ALL INSECTS)
+
+```{r}
+# Create a separate data frame for average weighted mean size of an insect at a site
+avg_mass <- all_insects_size
+
+# Calculate the biomass of each taxa
+avg_mass <- avg_mass %>% 
+  mutate(
+    Biomass = mass_mg * Merged_diversity
+  )
+
+# Calculate AvgSiteBiomass
+site_avg_mass <- avg_mass %>%
+  group_by(SSBS) %>%
+  summarise(TotalSiteBiomass = sum(Biomass, na.rm = TRUE),
+         TotalSiteAbundance = sum(Merged_diversity, na.rm = TRUE),
+         LogAvgSiteBiomass = log(TotalSiteBiomass / TotalSiteAbundance)
+         ) %>%  
+  ungroup() 
+
+# View rows where LogAvgSiteBiomass is 0, NA, or blank - i.e. no total abundance!
+site_avg_mass %>%
+  filter(is.na(LogAvgSiteBiomass) | LogAvgSiteBiomass == 0 | LogAvgSiteBiomass == "") %>% View()
 ```
 
 
-# Average mass of an insect at a site (FOR ALL INSECTS)
+# Check if there are any studies where the average mass does not vary among sites and exclude them from the analysis
+# If mass is the same in all sites, then either its a 1-species study or its a study where they're all in the same family/genus and we don't have any size data more finely resolved
+# Either way, such studies cannot contribute to the model for average mass, so their inclusion would bias the results (it would flatten all the coefficients towards zero) so lets remove them
+
+```{r}
+# Get a list of the unique studies and their sites
+unique_SS <- avg_mass %>% dplyr::select(SS, SSBS) %>% unique()
+
+# First lets merge SS into out site_avg_mass data frame
+site_avg_mass <- site_avg_mass %>% 
+  left_join(unique_SS %>% dplyr::select(SSBS, SS), by = "SSBS") 
+
+# Filter out those sites with NaN for LogAvgSiteBiomass due to log(0)
+site_avg_mass <- site_avg_mass %>% filter(!is.nan(LogAvgSiteBiomass))
+
+# Identify studies that contain sites with no variation in LogAvgSiteBiomass
+no_variation <- site_avg_mass %>%
+  group_by(SS) %>%
+  summarise(n_unique = n_distinct(round(LogAvgSiteBiomass, 5))) %>% # round all values to 5 digits
+  filter(n_unique == 1)
+
+# Lets filter out those rows which come from studies with no variation in LogAvgSiteBiomass (i.e. the same average mass value across sites)
+filtered_site_avg_mass <- site_avg_mass %>% filter(!SS %in% no_variation$SS)
+
+# Sense check
+any(filtered_site_avg_mass$SS %in% no_variation$SS) # are any of thise studies still present in my filtered data frame? 
+```
+
+# Calculating what % of taxa at a site have a unique mass_mg value. This captures both dimensions of the quality of the size data in that 1. If mass_mg values across taxa at a site are resolved to species level then the % of taxa with a unique mass_mg value will be high AND the taxa will all have different mass_mg values because they are resolved to species level.
+
+```{r}
+# Calculate the number of unique mass_mg values per site as a % of the overall number of rows per site
+UniqueSiteMassValues <- avg_mass %>%
+  group_by(SSBS) %>%
+  summarise(
+    unique_mass_mg = n_distinct(mass_mg),
+    total_rows = n(),
+    percent_unique = (unique_mass_mg / total_rows) * 100
+  )
+
+# Merge SS
+UniqueSiteMassValues <- UniqueSiteMassValues %>% 
+  left_join(unique_SS %>% dplyr::select(SSBS, SS), by = "SSBS") %>% 
+  dplyr::select(SS, SSBS, unique_mass_mg, total_rows, percent_unique)
+
+# Filter out those studies already identified with no variation in average mass among sites
+FilteredUniqueSiteMassValues <- UniqueSiteMassValues %>% filter(!SS %in% no_variation$SS)
+
+#all_insects_size %>% filter(SSBS == "SC1_2006__Benedick 1  1") %>% View()
+#all_insects_size %>% filter(SSBS == "CC1_2007__Ewers 1 J 133") %>% View()
+#avg_mass %>% filter(SS == "LH2_2009__Giangarelli 1") %>% View()
+#site_avg_mass %>% filter(SS == "SS1_2011__Lange 1") %>% View()
+#site_avg_mass %>% filter(SS == "SS1_2011__Lange 1") %>% distinct(round(LogAvgSiteBiomass, 5))
+```
+
+# Old calculations for average mass
 
 ```{r}
 # Create a separate data frame for average weighted mean size of an insect at a site
@@ -1651,36 +1947,49 @@ site_avg_mass <- avg_mass %>%
     total_Merged_diversity = sum(Merged_diversity, na.rm = TRUE),
     average_relativeAb_logMass = sum_relativeAb_logMass / total_Merged_diversity
   ) 
-
-# View rows where logMass_total is 0, NA, or blank
-site_avg_mass %>%
-  filter(is.na(average_relativeAb_logMass) | average_relativeAb_logMass == 0 | average_relativeAb_logMass == "") %>% View()
 ```
 
 # Merge with PREDICTS insects
 ```{r}
 # Use distinct() to keep only the first appearance of each site within the overall PREDICTS div extract for insects
-insects_single <- insects %>%
+insects_single <- insects %>% 
   distinct(SSBS, .keep_all = TRUE)
+
+ # Drop the extra SS column 
+filtered_site_avg_mass <- filtered_site_avg_mass %>% dplyr::select(-SS)
 
 # merge site level avg mass values
 final_avg_mass <- insects_single %>%
-  left_join(site_avg_mass, by = "SSBS") %>% 
+  left_join(filtered_site_avg_mass, by = "SSBS") %>% 
   droplevels()
+
+# Have a look at sites with no value for average biomass, either 0 total abundance or no body size value assigned
+no_avg_biomass <- final_avg_mass %>%
+  filter(
+    is.na(LogAvgSiteBiomass) |         # remove NA
+    is.nan(LogAvgSiteBiomass)|        # remove NaN
+    LogAvgSiteBiomass == 0 |            # remove 0
+    LogAvgSiteBiomass == ""            # remove empty strings
+  ) 
 
 # filter out sites with no avg mass value 
 final_avg_mass <- final_avg_mass %>%
   filter(
-    !is.na(average_relativeAb_logMass),         # remove NA
-    !is.nan(average_relativeAb_logMass),        # remove NaN
-    average_relativeAb_logMass != 0,            # remove 0
-    average_relativeAb_logMass != ""            # remove empty strings
+    !is.na(LogAvgSiteBiomass),         # remove NA
+    !is.nan(LogAvgSiteBiomass),        # remove NaN
+    LogAvgSiteBiomass != 0,            # remove 0
+    LogAvgSiteBiomass != ""            # remove empty strings
   )
 
-# 12918 sites in total
+# 10646 sites in total
+
+# These are the studies with the same average mass value across sites
+site_avg_mass %>% filter(SS %in% no_variation$SS) %>% View()
+
+rm(insects_single, avg_mass, no_avg_biomass, site_avg_mass, unique_SS, no_variation, filtered_site_avg_mass, UniqueSiteMassValues)
 ```
 
-# Start the modelling of AVG MASS for ALL INSECTS
+# Tidy the LU classes
 
 ```{r}
 # Rename predominant habitat since its not really habitat we're looking at
@@ -1705,6 +2014,8 @@ final_avg_mass <- final_avg_mass %>%
     Use_intensity = factor(Use_intensity),
     Use_intensity = relevel(Use_intensity, ref = "Minimal use")
   )
+
+table(final_avg_mass$Predominant_land_use, final_avg_mass$Use_intensity)
 ```
 
 # Create LUI (LU + UI)
@@ -1748,64 +2059,48 @@ final_avg_mass <- final_avg_mass %>%
                  "Urban_Minimal_use", "Urban_Light_use", "Urban_Intense_use")
     )
   )
-
-# Have a look at sample sizes
-table(final_avg_mass$LUI)
 ```
-
 
 # Create model data for average mass
 
 ```{r}
 # drop all rows with NAs for land use and use intensity and drop empty levels
-model_data_mass <- drop_na(final_avg_mass, Predominant_land_use, Use_intensity) %>% droplevels() 
+model_data_avg_mass <- drop_na(final_avg_mass, Predominant_land_use, Use_intensity) %>% droplevels() 
 
 # check distributions
-hist(model_data_mass$average_relativeAb_logMass)
-hist(avg_mass$relativeAb_logMass)
-
+hist(model_data_avg_mass$LogAvgSiteBiomass)
 
 # Have a look at sample sizes
-table(model_data_mass$Predominant_land_use, model_data_mass$Use_intensity)
-table(model_data_mass$LUI)
+table(model_data_avg_mass$Predominant_land_use, model_data_avg_mass$Use_intensity)
+table(model_data_avg_mass$LUI)
 
-length(unique(model_data_mass$SS)) # 444 studies 
-length(unique(model_data_mass$SSBS)) # 10520 sites
+length(unique(model_data_avg_mass$SS)) # 372 studies 
+length(unique(model_data_avg_mass$SSBS)) # 8621 sites
 ```
 
-```{r}
-# Complete cases and model data
-
-# drop all rows with NAs for land use and use intensity and drop empty levels
-model_data_mass <- drop_na(final_avg_mass, Predominant_land_use, Use_intensity) %>% droplevels() 
-```
-
-
-# Modelling AVG_MASS ~ LU and creating the LU plot for all insects
+# Figure which removes studies with < 10% unique size values across taxa within a site for LU
 
 ```{r}
-# maximal model
-m1 <- lmer(average_relativeAb_logMass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
-           data = model_data_mass)
+lessthan10 <- FilteredUniqueSiteMassValues %>%
+  filter(percent_unique < 10) %>%
+  pull(SS) %>% 
+  unique()
 
-# remove block
-m2 <-lmer(average_relativeAb_logMass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
-    data = model_data_mass)
+model10 <- model_data_avg_mass %>%
+  filter(!SS %in% lessthan10)
 
-# remove study
-m3 <-lmer(average_relativeAb_logMass ~ Predominant_land_use + (1 | Source_ID),
-    data = model_data_mass)
-
-AIC(m1, m2, m3) # m2 best model
+# One for LU
+reduced_model <- lmer(LogAvgSiteBiomass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model10)
 
 # model estimates
-summary(m2)
-anova(m2)
-model_plot(m2)
-coef(summary(m2))
+summary(reduced_model)
+anova(reduced_model)
+model_plot(reduced_model)
+
 
 # gather the effects and confidence intervals using simulation. Simulate 1000 times
-eff <- FEsim(m2, n.sims = 1000)
+eff <- FEsim(reduced_model, n.sims = 1000)
 
   # make the term column a factor so it can be recoded
   eff$term <- as.factor(eff$term)
@@ -1860,274 +2155,67 @@ eff <- FEsim(m2, n.sims = 1000)
               axis.title.y = element_text(face = "bold"),
               panel.border = element_rect(colour = "black",  fill=NA))+
         xlab("Land use intensity class")+
-        ylab("log10(average mass) difference (%)") +
+        ylab("log(average mass) difference (%)") +
         guides(color = guide_legend(
           override.aes=list(shape = 15, size = 10)))
      
-  #ggsave(filename = "figures/avg_mass_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
+  #ggsave(filename = "../figures/avg_mass_LU_10percent.png",  plot = p, width = 6, height = 4, dpi = 300)
 
+mass_sensitivity_eff <- eff %>% mutate(Analysis = "Sensitivity analysis")
   
-rm(eff, m1, m2, m3, p, final_avg_mass, model_data_mass)     
+rm(eff, reduced_model, model10, lessthan10, p)     
+
 ```
 
-# Total abundance responses to LU
+# # Figure which removes studies with < 10% unique size values across taxa within a site for LUI 
 
 ```{r}
-# All-insect set of site-level log(abundance) and species-richness data
-# Has filtered out accidentally sampled larvae
-abundance <-  qread("/Users/jusi/Desktop/multi-groups/data/abundance-data-prepared-all-insects.qs")
+lessthan10 <- FilteredUniqueSiteMassValues %>%
+  filter(percent_unique < 10) %>%
+  pull(SS) %>% 
+  unique()
 
-# Filter PREDICTS for same set of sites as in my biomass model data
-filtered_abundance <- abundance %>%
-  filter(SSBS %in% model_data_size$SSBS) %>%
-  distinct(SSBS, .keep_all = TRUE)
+model10 <- model_data_avg_mass %>%
+  filter(!SS %in% lessthan10)
 
-# Append use intensity based on SSBS
-filtered_abundance <- filtered_abundance %>%
-  left_join(
-    model_data_size %>% dplyr::select(SSBS, Use_intensity, Source_ID, SSB),
-    by = "SSBS"
-  )
-```
-
-# Start the modelling of all of the insects (Abundance responses)
-
-```{r}
-# Rename predominant habitat since its not really habitat we're looking at
-filtered_abundance <- rename(filtered_abundance,
-                Predominant_land_use = Predominant_habitat)
-
-# Relevel the land use and use intensity classes
-filtered_abundance <- filtered_abundance %>%
-  mutate(
-    # collapse primary forest and non-forest together into primary vegetation as these aren't well distinguished
-    Predominant_land_use = recode_factor(Predominant_land_use, 
-                                         "Primary forest" = "Primary", 
-                                         "Primary non-forest" = "Primary"),
-    # indeterminate secondary veg and cannot decide get NA
-   Predominant_land_use = na_if(Predominant_land_use, "Secondary vegetation (indeterminate age)"),
-    Predominant_land_use = na_if(Predominant_land_use, "Cannot decide"), 
-    Use_intensity = na_if(as.character(Use_intensity), "Cannot decide"),
-    
-    # set reference levels
-    Predominant_land_use = factor(Predominant_land_use),
-    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
-    Use_intensity = factor(Use_intensity),
-    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
-  )
-
-# take a look at the LandUse/Use intensity split
-table(filtered_abundance$Predominant_land_use, filtered_abundance$Use_intensity)
-```
-
-# Create LUI (LU + UI)
-
-```{r}
-# Append Predominant_land_use and Use_intensity
-filtered_abundance <- filtered_abundance %>%
-  mutate(
-    LUI = str_c(Predominant_land_use, Use_intensity, sep = "_"),
-    LUI = str_replace_all(LUI, "\\s+", "_") 
-  )
-
-# Have a look at sample sizes
-table(filtered_abundance$LUI)
-
-# MSV intense use has 6 sites, merge with light use
-# ISV intense use has 61 sites, merge with light use
-filtered_abundance <- filtered_abundance %>%
-  mutate(LUI = recode_factor(LUI,
-    "Mature_secondary_vegetation_Intense_use" = "Mature_secondary_vegetation_High_use",
-    "Mature_secondary_vegetation_Light_use"   = "Mature_secondary_vegetation_High_use",
-    "Intermediate_secondary_vegetation_Intense_use" = "Intermediate_secondary_vegetation_High_use",
-    "Intermediate_secondary_vegetation_Light_use" = "Intermediate_secondary_vegetation_High_use"
-  ))
-
-# Have a look at sample sizes
-table(filtered_abundance$LUI)
-
-# Set the reference levels for LUI
-filtered_abundance <- filtered_abundance %>%
-  mutate(
-    LUI = factor(
-      LUI,
-      levels = c("Primary_Minimal_use", "Primary_Light_use", "Primary_Intense_use",
-                 "Young_secondary_vegetation_Minimal_use", "Young_secondary_vegetation_Light_use", "Young_secondary_vegetation_Intense_use",
-                 "Intermediate_secondary_vegetation_Minimal_use", "Intermediate_secondary_vegetation_High_use", 
-                 "Mature_secondary_vegetation_Minimal_use",     "Mature_secondary_vegetation_High_use", 
-                 "Plantation_forest_Minimal_use", "Plantation_forest_Light_use", "Plantation_forest_Intense_use",
-                 "Pasture_Minimal_use", "Pasture_Light_use", "Pasture_Intense_use",
-                 "Cropland_Minimal_use", "Cropland_Light_use","Cropland_Intense_use",
-                 "Urban_Minimal_use", "Urban_Light_use", "Urban_Intense_use")
-    )
-  )
-
-# Have a look at sample sizes
-table(filtered_abundance$LUI)
-
-filtered_abundance %>% dplyr::select(SS, SSBS, Taxon_fold, Predominant_land_use, Use_intensity, LUI, Log_abundance_pX) %>% View()
-```
-
-# Create model data for abundance
-
-```{r}
-# drop all rows with NAs for land use, use intensity and log_abundance_px and drop empty levels
-model_data_abundance <- drop_na(filtered_abundance, Predominant_land_use, Use_intensity, Log_abundance_pX) %>% droplevels() 
-
-# check distributions
-hist(model_data_abundance$Log_abundance_pX)
-
-# Have a look at sample sizes
-table(model_data_abundance$Predominant_land_use, model_data_abundance$Use_intensity)
-table(model_data_abundance$LUI)
-
-length(unique(model_data_abundance$SS)) # 405 studies 
-length(unique(model_data_abundance$SSBS)) # 9794 sites
-```
-
-# Modelling ABUNDANCE ~ LU and creating the LU plot for all insects
-
-```{r}
-# maximal model
-m1 <- lmer(Log_abundance_pX ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
-           data = model_data_abundance)
-
-# remove block
-m2 <-lmer(Log_abundance_pX ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
-    data = model_data_abundance)
-
-# remove study
-m3 <-lmer(Log_abundance_pX ~ Predominant_land_use + (1 | Source_ID),
-    data = model_data_abundance)
-
-AIC(m1, m2, m3) # m1 best model
+reduced_model <- lmer(LogAvgSiteBiomass ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model10)
 
 # model estimates
-summary(m1)
-anova(m1)
-model_plot(m1)
-coef(summary(m1))
-
-
-# gather the effects and confidence intervals using simulation. Simulate 1000 times
-eff <- FEsim(m1, n.sims = 1000)
+summary(reduced_model)
+anova(reduced_model)
+      
+      
+      # gather the effects and confidence intervals using simulation. Simulate 1000 times
+eff <- FEsim(reduced_model, n.sims = 1000)
 
   # make the term column a factor so it can be recoded
   eff$term <- as.factor(eff$term)
   
-  # rename factors for ease of visualisation
-  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary",
-                                "Predominant_land_useYoung secondary vegetation" = "YSV",
-                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
-                                "Predominant_land_useMature secondary vegetation" = "MSV",
-                                "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
-                                "Predominant_land_usePlantation forest" = "Plantation",
-                                "Predominant_land_usePasture" = "Pasture",
-                                "Predominant_land_useCropland" = "Cropland",
-                                "Predominant_land_useUrban" = "Urban")
-  
-  # Add in upper and lower confidence intervals 
-  eff <- eff %>%
-    mutate(Upper_ci = (median + 1.96*sd)) %>%
-    mutate(Lower_ci = (median - 1.96*sd))
-  
-  
-    eff <- eff %>%
-        mutate(
-          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
-        mutate(
-          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
-        mutate(
-          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
-  
-      eff[1,7] <- 0 #shift median
-      eff[1,8] <- 0 #shift upper
-      eff[1,9] <- 0 #shift lower
-      
-      colnames(eff)[1] <- "Predominant_land_use"
-      
-     p <- eff %>%
-        ggplot()+
-        aes(x = Predominant_land_use, y = Percent_diff)+
-        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-        geom_point(size = 3, position = position_dodge(width = 0.5))+
-        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), position = position_dodge(width = 0.5), linewidth = 1)+
-        theme_classic()+
-        geom_vline(xintercept = 1.5, linetype = 2)+
-        geom_vline(xintercept = 2.5, linetype = 2)+
-        geom_vline(xintercept = 3.5, linetype = 2)+
-        geom_vline(xintercept = 4.5, linetype = 2)+
-        geom_vline(xintercept = 5.5, linetype = 2)+
-        geom_vline(xintercept = 6.5, linetype = 2)+
-        geom_vline(xintercept = 7.5, linetype = 2)+
-        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
-              axis.title.x = element_blank(),
-              axis.title.y = element_text(face = "bold"),
-              panel.border = element_rect(colour = "black",  fill=NA))+
-        xlab("Land use intensity class")+
-        ylab("log10(total abundance) difference (%)") +
-        guides(color = guide_legend(
-          override.aes=list(shape = 15, size = 10)))
-     
-  #ggsave(filename = "figures/abundance_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
+ # rename factors for ease of visualisation
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary (minimal)",
+                            "LUIPrimary_Light_use" = "Primary (light)",
+                                "LUIPrimary_Intense_use" = "Primary (intense)",
+                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV (minimal)",
+                            "LUIYoung_secondary_vegetation_Light_use" = "YSV (light)",
+                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV (intense)",
+                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV (minimal)",
+                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV (high)",
+                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV (minimal)",
+                            "LUIMature_secondary_vegetation_High_use" = "MSV (high)",
+                            "LUIPlantation_forest_Minimal_use" = "Plantation (minimal)",
+                            "LUIPlantation_forest_Light_use" = "Plantation (light)",
+                            "LUIPlantation_forest_Intense_use" = "Plantation (intense)",
+                            "LUIPasture_Minimal_use" = "Pasture (minimal)",
+                            "LUIPasture_Light_use" = "Pasture (light)",
+                            "LUIPasture_Intense_use" = "Pasture (intense)",
+                            "LUICropland_Minimal_use" = "Cropland (minimal)",
+                            "LUICropland_Light_use" = "Cropland (light)",
+                            "LUICropland_Intense_use" = "Cropland (intense)",
+                            "LUIUrban_Minimal_use" = "Urban (minimal)",
+                            "LUIUrban_Light_use" = "Urban (light)",
+                            "LUIUrban_Intense_use" = "Urban (intense)")
 
-  
-rm(eff, m1, m2, m3, p)     
-```
-
-# Modelling ABUNDANCE ~ LUI (LU + UI) and creating the LUI plot for all insects
-
-```{r}
-# maximal model
-m1 <- lmer(Log_abundance_pX ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
-           data = model_data_abundance)
-
-# remove block
-m2 <-lmer(Log_abundance_pX ~ LUI + (1 | Source_ID) + (1 | SS),
-    data = model_data_abundance)
-
-# remove study
-m3 <-lmer(Log_abundance_pX ~ LUI + (1 | Source_ID),
-    data = model_data_abundance)
-
-AIC(m1, m2, m3) # m1 best model
-
-# model estimates
-summary(m1)
-anova(m1)
-model_plot(m1)
-coef(summary(m1))
-
-
-# gather the effects and confidence intervals using simulation. Simulate 1000 times
-eff <- FEsim(m1, n.sims = 1000)
-
-  # make the term column a factor so it can be recoded
-  eff$term <- as.factor(eff$term)
-  
-  # rename factors for ease of visualisation
-  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary_minimal",
-                            "LUIPrimary_Light_use" = "Primary_light",
-                                "LUIPrimary_Intense_use" = "Primary_intense",
-                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV_minimal",
-                            "LUIYoung_secondary_vegetation_Light_use" = "YSV_light",
-                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV_intense",
-                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV_minimal",
-                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV_high",
-                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV_minimal",
-                            "LUIMature_secondary_vegetation_High_use" = "MSV_high",
-                            "LUIPlantation_forest_Minimal_use" = "Plantation_minimal",
-                            "LUIPlantation_forest_Light_use" = "Plantation_light",
-                            "LUIPlantation_forest_Intense_use" = "Plantation_intense",
-                            "LUIPasture_Minimal_use" = "Pasture_minimal",
-                            "LUIPasture_Light_use" = "Pasture_light",
-                            "LUIPasture_Intense_use" = "Pasture_intense",
-                            "LUICropland_Minimal_use" = "Cropland_minimal",
-                            "LUICropland_Light_use" = "Cropland_light",
-                            "LUICropland_Intense_use" = "Cropland_intense",
-                            "LUIUrban_Minimal_use" = "Urban_minimal",
-                            "LUIUrban_Light_use" = "Urban_light",
-                            "LUIUrban_Intense_use" = "Urban_intense")
                         
   # Add in upper and lower confidence intervals 
   eff <- eff %>%
@@ -2153,8 +2241,8 @@ eff <- FEsim(m1, n.sims = 1000)
         ggplot()+
         aes(x = Predominant_land_use, y = Percent_diff)+
         geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
-        geom_point(size = 3)+
-        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1)+
+        geom_point(size = 3, colour = "red")+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1, colour = "red")+
         theme_classic()+
         geom_vline(xintercept = 3.5, linetype = 2)+
         geom_vline(xintercept = 6.5, linetype = 2)+
@@ -2169,16 +2257,806 @@ eff <- FEsim(m1, n.sims = 1000)
               axis.title.y = element_text(face = "bold"),
               panel.border = element_rect(colour = "black",  fill=NA))+
         xlab("Land use intensity class")+
-        ylab("log10(total abundance) difference (%)") +
+        ylab("log(average mass) difference (%)") +
         guides(color = guide_legend(
           override.aes=list(shape = 15, size = 10)))
      
-       #ggsave(filename = "figures/abundance_LUI.png",  plot = p, width = 8, height = 7, dpi = 300)
+       #ggsave(filename = "../figures/avg_mass_LUI_10percent.png",  plot = p, width = 8, height = 7, dpi = 300)
+    
+    mass_LUI_sensitivity_eff <- eff %>% mutate(Data = "Studies with homogenous size data excluded")
+     
+rm(eff, m1, m2, m3, p)    
+
+```
+
+# Modelling AVG_MASS ~ LU and creating the LU plot for all insects
+
+```{r}
+# maximal model
+m1 <- lmer(LogAvgSiteBiomass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_avg_mass)
+
+# remove block
+m2 <-lmer(LogAvgSiteBiomass ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
+    data = model_data_avg_mass)
+
+# remove study
+m3 <-lmer(LogAvgSiteBiomass ~ Predominant_land_use + (1 | Source_ID),
+    data = model_data_avg_mass)
+
+AIC(m1, m2, m3) # m1 best model
+
+# model estimates
+summary(m1)
+anova(m1)
+model_plot(m1)
+coef(summary(m1))
+
+# gather the effects and confidence intervals using simulation. Simulate 1000 times
+eff <- FEsim(m1, n.sims = 1000)
+
+  # make the term column a factor so it can be recoded
+  eff$term <- as.factor(eff$term)
+  
+  # rename factors for ease of visualisation
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary",
+                                "Predominant_land_useYoung secondary vegetation" = "YSV",
+                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
+                                "Predominant_land_usePlantation forest" = "Plantation",
+                                "Predominant_land_usePasture" = "Pasture",
+                                "Predominant_land_useCropland" = "Cropland",
+                                "Predominant_land_useUrban" = "Urban")
+  
+  # Add in upper and lower confidence intervals 
+  eff <- eff %>%
+    mutate(Upper_ci = (median + 1.96*sd)) %>%
+    mutate(Lower_ci = (median - 1.96*sd))
+  
+  
+    eff <- eff %>%
+        mutate(
+          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
+        mutate(
+          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
+        mutate(
+          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+  
+      eff[1,7] <- 0 #shift median
+      eff[1,8] <- 0 #shift upper
+      eff[1,9] <- 0 #shift lower
+      
+      colnames(eff)[1] <- "Predominant_land_use"
+      
+     p <- eff %>%
+        ggplot()+
+        aes(x = Predominant_land_use, y = Percent_diff)+
+        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+        geom_point(size = 3, position = position_dodge(width = 0.5))+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), position = position_dodge(width = 0.5), linewidth = 1)+
+        theme_classic()+
+        geom_vline(xintercept = 1.5, linetype = 2)+
+        geom_vline(xintercept = 2.5, linetype = 2)+
+        geom_vline(xintercept = 3.5, linetype = 2)+
+        geom_vline(xintercept = 4.5, linetype = 2)+
+        geom_vline(xintercept = 5.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 7.5, linetype = 2)+
+        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
+              axis.title.x = element_blank(),
+              axis.title.y = element_text(face = "bold"),
+              panel.border = element_rect(colour = "black",  fill=NA))+
+        xlab("Land use intensity class")+
+        ylab("log(average mass) difference (%)") +
+        guides(color = guide_legend(
+          override.aes=list(shape = 15, size = 10)))
+     
+  #ggsave(filename = "../figures/avg_mass_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
+  #avgmass_eff <- eff %>% mutate(Analysis = "Non sensitivity analysis")
+  
+rm(eff, m1, m2, m3, p)     
+```
+
+# Combine coefficients from non-sensitivity and sensitivity analysis of mass (LU)
+
+```{r}
+avgmass_eff <- avgmass_eff %>% mutate(Data = "All of the data")
+mass_sensitivity_eff <- mass_sensitivity_eff %>% mutate(Data = "Studies with homogenous size data excluded")
+
+combined <- rbind(mass_sensitivity_eff, avgmass_eff)
+
+p <- combined %>%
+  ggplot(aes(x = Predominant_land_use,
+             y = Percent_diff,
+             colour = Data,
+             group = Data)) +
+  
+  # zero line
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  
+  # confidence intervals for each Variable
+  geom_linerange(aes(ymin = Percent_lower,
+                     ymax = Percent_upper),
+                 linewidth = 1,
+                 position = position_dodge(width = 0.75)) +
+  
+  # points for each Variable
+  geom_point(size = 3,
+             position = position_dodge(width = 0.75)) +
+  
+  # manual colours
+  scale_colour_manual(values = c(
+    "All of the data" = "black",
+    "Studies with homogenous size data excluded" = "red"
+  )) +
+  
+  # aesthetics & theme
+  theme_classic() +
+  geom_vline(xintercept = 1.5, linetype = 2) +
+  geom_vline(xintercept = 2.5, linetype = 2) +
+  geom_vline(xintercept = 3.5, linetype = 2) +
+  geom_vline(xintercept = 4.5, linetype = 2) +
+  geom_vline(xintercept = 5.5, linetype = 2) +
+  geom_vline(xintercept = 6.5, linetype = 2) +
+  geom_vline(xintercept = 7.5, linetype = 2) +
+  
+  theme(
+    axis.text.x = element_text(face = "bold", angle = 45, hjust = 1),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.position = "bottom"
+  ) +
+  
+  xlab("Land use intensity class") +
+  ylab("log(average mass) difference (%)") +
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 6, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 10)) 
+
+  #ggsave(filename = "../figures/C3-sensitivity-mass.png",  plot = p, width = 8, height = 5, dpi = 300)
+  #saveRDS(combined, "../figures/C3 figures/C3-mass-LU-sensitivity-df.rds")
+
+
+```
+
+# Bens pesticide meta analysis code
+```{r}
+data <- read_xlsx(file.choose())
+
+data <- strings2factors(data)
+
+summary(data)
+
+
+invertebrates <- data %>% filter(`Primary classification of non-target organism` == "Invertebrate")
+
+filter_inverts <- invertebrates %>% dplyr::select(c(`Non-target organism name`, `Non-target organism Latin name`, `Secondary classification of non-target organism`, `Primary classification of non-target organism`))
+
+arthropods <- filter_inverts %>% filter(`Secondary classification of non-target organism` == "Arthropod")
+
+unique_names <- arthropods %>% dplyr::select(`Non-target organism Latin name`) %>% distinct()
+
+unique_names_filtered <- unique_names %>%
+  filter(str_count(`Non-target organism Latin name`, "\\S+") == 2) %>% 
+  filter(!str_detect(`Non-target organism Latin name`, "^\\S+\\s+(sp\\.|spp\\.)$"))
+
+
+non_sp_names <- unique_names %>% filter(!`Non-target organism Latin name` %in% unique_names_filtered$`Non-target organism Latin name`) %>%
+  filter(!str_detect(`Non-target organism Latin name`, "^\\S+\\s+(sp\\.|spp\\.)$"))
+
+
+
+
+
+matching_rows <- unique_names_filtered %>%
+  filter(`Non-target organism Latin name` %in% all_insects_size$Best_guess_binomial)
+
+
+
+
+
+
+colnames(invertebrates)
+
+
+unique(levels(data$`Primary classification of non-target organism`))
+
+```
+
+# Modelling AVG_MASS ~ LUI (LU + UI) and creating the LUI plot for all insects
+
+```{r}
+# maximal model
+m1 <- lmer(LogAvgSiteBiomass ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_avg_mass)
+
+# remove block
+m2 <-lmer(LogAvgSiteBiomass ~ LUI + (1 | Source_ID) + (1 | SS),
+    data = model_data_avg_mass)
+
+# remove study
+m3 <-lmer(LogAvgSiteBiomass ~ LUI + (1 | Source_ID),
+    data = model_data_avg_mass)
+
+AIC(m1, m2, m3) # m1 best model
+
+# model estimates
+summary(m1)
+anova(m1)
+model_plot(m1)
+coef(summary(m1))
+
+
+# gather the effects and confidence intervals using simulation. Simulate 1000 times
+eff <- FEsim(m1, n.sims = 1000)
+
+  # make the term column a factor so it can be recoded
+  eff$term <- as.factor(eff$term)
+  
+  # rename factors for ease of visualisation
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary (minimal)",
+                            "LUIPrimary_Light_use" = "Primary (light)",
+                                "LUIPrimary_Intense_use" = "Primary (intense)",
+                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV (minimal)",
+                            "LUIYoung_secondary_vegetation_Light_use" = "YSV (light)",
+                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV (intense)",
+                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV (minimal)",
+                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV (high)",
+                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV (minimal)",
+                            "LUIMature_secondary_vegetation_High_use" = "MSV (high)",
+                            "LUIPlantation_forest_Minimal_use" = "Plantation (minimal)",
+                            "LUIPlantation_forest_Light_use" = "Plantation (light)",
+                            "LUIPlantation_forest_Intense_use" = "Plantation (intense)",
+                            "LUIPasture_Minimal_use" = "Pasture (minimal)",
+                            "LUIPasture_Light_use" = "Pasture (light)",
+                            "LUIPasture_Intense_use" = "Pasture (intense)",
+                            "LUICropland_Minimal_use" = "Cropland (minimal)",
+                            "LUICropland_Light_use" = "Cropland (light)",
+                            "LUICropland_Intense_use" = "Cropland (intense)",
+                            "LUIUrban_Minimal_use" = "Urban (minimal)",
+                            "LUIUrban_Light_use" = "Urban (light)",
+                            "LUIUrban_Intense_use" = "Urban (intense)")
+                        
+  # Add in upper and lower confidence intervals 
+  eff <- eff %>%
+    mutate(Upper_ci = (median + 1.96*sd)) %>%
+    mutate(Lower_ci = (median - 1.96*sd))
+  
+  
+    eff <- eff %>%
+        mutate(
+          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
+        mutate(
+          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
+        mutate(
+          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+  
+      eff[1,7] <- 0 #shift median
+      eff[1,8] <- 0 #shift upper
+      eff[1,9] <- 0 #shift lower
+      
+      colnames(eff)[1] <- "Predominant_land_use"
+      
+    MassLUIPlot <-  eff %>%
+        ggplot()+
+        aes(x = Predominant_land_use, y = Percent_diff)+
+        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+        geom_point(size = 3, colour = "blue")+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1, colour = "blue")+
+        theme_classic()+
+        geom_vline(xintercept = 3.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 8.5, linetype = 2)+
+        geom_vline(xintercept = 10.5, linetype = 2)+
+        geom_vline(xintercept = 13.5, linetype = 2)+
+        geom_vline(xintercept = 16.5, linetype = 2)+
+        geom_vline(xintercept = 19.5, linetype = 2)+
+        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
+              axis.title.x = element_blank(),
+              axis.title.y = element_text(face = "bold"),
+              panel.border = element_rect(colour = "black",  fill=NA))+
+        xlab("Land use intensity class")+
+        ylab("log(average mass) difference (%)") +
+        guides(color = guide_legend(
+          override.aes=list(shape = 15, size = 10))) +
+      scale_y_continuous(
+  breaks = seq(-25, 50, by = 25)   # add more ticks
+)
+
+     
+       #ggsave(filename = "../figures/avg_mass_LUI.png",  plot = p, width = 8, height = 7, dpi = 300)
+       
+       mass_LUI_eff <- eff %>% mutate(Variable = "Average mass")
+       mass_LUI_eff <- eff %>% mutate(Data = "All of the data")
+     
+rm(eff, m1, m2, m3, p)     
+```
+
+# Combine coefficients from non-sensitivity and sensitivity analysis of mass (LUI)
+
+```{r}
+avgmass_eff <- avgmass_eff %>% mutate(Data = "All of the data")
+mass_sensitivity_eff <- mass_sensitivity_eff %>% mutate(Data = "Studies with homogenous size data excluded")
+
+combined <- rbind(mass_LUI_eff, mass_LUI_sensitivity_eff)
+
+p <- combined %>%
+  ggplot(aes(x = Predominant_land_use,
+             y = Percent_diff,
+             colour = Data,
+             group = Data)) +
+  
+  # zero line
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  
+  # confidence intervals for each Variable
+  geom_linerange(aes(ymin = Percent_lower,
+                     ymax = Percent_upper),
+                 linewidth = 1,
+                 position = position_dodge(width = 0.75)) +
+  
+  # points for each Variable
+  geom_point(size = 3,
+             position = position_dodge(width = 0.75)) +
+  
+  # manual colours
+  scale_colour_manual(values = c(
+    "All of the data" = "black",
+    "Studies with homogenous size data excluded" = "red"
+  )) +
+  
+  # aesthetics & theme
+  theme_classic() +
+   geom_vline(xintercept = 3.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 8.5, linetype = 2)+
+        geom_vline(xintercept = 10.5, linetype = 2)+
+        geom_vline(xintercept = 13.5, linetype = 2)+
+        geom_vline(xintercept = 16.5, linetype = 2)+
+        geom_vline(xintercept = 19.5, linetype = 2)+
+  
+  theme(
+    axis.text.x = element_text(face = "bold", angle = 45, hjust = 1),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.position = "bottom"
+  ) +
+  
+  xlab("Land use intensity class") +
+  ylab("log(average mass) difference (%)") +
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 6, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 10)) 
+
+  #ggsave(filename = "../figures/C3 figures/C3-sensitivity-mass-LUI.png",  plot = p, width = 10, height = 6, dpi = 300)
+  #saveRDS(combined, "../figures/C3 figures/C3-mass-LU-sensitivity-df.rds")
+  
+combined <- read_rds(file.choose())  
+
+  combined <- combined %>% mutate(percentdiff = round(Percent_upper - Percent_lower, 2)
+
+
+```
+
+
+# Total abundance responses to LU
+
+```{r}
+# All-insect set of site-level log(abundance) and species-richness data
+# Has filtered out accidentally sampled larvae
+abundance <-  qread("/Users/jusi/Desktop/multi-groups/data/abundance-data-prepared-all-insects.qs")
+
+# Use dplyr to reshape the abundance data
+# For each SSBS: sum the total abundance values then take the mean log_plus_what (they'll all be the same - comes from the minimum non-zero value across the entire study) 
+# logAllInsectAbundance = log(sumTotalAbundance + mean_log_plus_what) - an overall abundance value for all of the insects at each site!
+abundance_summary <- abundance %>%
+  group_by(SSBS) %>%
+  summarise(
+    sumTotalAbundance = sum(Total_abundance, na.rm = TRUE),
+    mean_log_plus_what = mean(Log_plus_what, na.rm = TRUE)
+  ) %>%
+  mutate(logAllInsectAbundance = log(sumTotalAbundance + mean_log_plus_what))
+
+# Filter PREDICTS for same set of sites as in my biomass model data
+filtered_abundance <-  abundance_summary %>%
+  filter(SSBS %in% model_data_biomass$SSBS) %>%
+  distinct(SSBS, .keep_all = TRUE)
+
+# Append use intensity based on SSBS
+filtered_abundance <- filtered_abundance %>%
+  left_join(
+    model_data_biomass %>% dplyr::select(SS, SSBS, Predominant_land_use, Use_intensity, Source_ID, SSB),
+    by = "SSBS"
+  )
+```
+
+# Start the modelling of all of the insects (Abundance responses)
+
+```{r}
+# Relevel the land use and use intensity classes
+filtered_abundance <- filtered_abundance %>%
+  mutate(
+    # convert back to factors and set reference levels
+    Predominant_land_use = factor(Predominant_land_use),
+    Predominant_land_use = relevel(Predominant_land_use, ref = "Primary"),
+    Use_intensity = factor(Use_intensity),
+    Use_intensity = relevel(Use_intensity, ref = "Minimal use")
+  )
+
+# take a look at the LandUse/Use intensity split
+table(filtered_abundance$Predominant_land_use, filtered_abundance$Use_intensity)
+
+levels(filtered_abundance$Predominant_land_use)
+levels(filtered_abundance$Use_intensity)
+```
+
+# Create LUI (LU + UI)
+
+```{r}
+# Append Predominant_land_use and Use_intensity
+filtered_abundance <- filtered_abundance %>%
+  mutate(
+    LUI = str_c(Predominant_land_use, Use_intensity, sep = "_"),
+    LUI = str_replace_all(LUI, "\\s+", "_") 
+  )
+
+# MSV intense use has 6 sites, merge with light use
+# ISV intense use has 61 sites, merge with light use
+filtered_abundance <- filtered_abundance %>%
+  mutate(LUI = recode_factor(LUI,
+    "Mature_secondary_vegetation_Intense_use" = "Mature_secondary_vegetation_High_use",
+    "Mature_secondary_vegetation_Light_use"   = "Mature_secondary_vegetation_High_use",
+    "Intermediate_secondary_vegetation_Intense_use" = "Intermediate_secondary_vegetation_High_use",
+    "Intermediate_secondary_vegetation_Light_use" = "Intermediate_secondary_vegetation_High_use"
+  ))
+
+# Set the reference levels for LUI
+filtered_abundance <- filtered_abundance %>%
+  mutate(
+    LUI = factor(
+      LUI,
+      levels = c("Primary_Minimal_use", "Primary_Light_use", "Primary_Intense_use",
+                 "Young_secondary_vegetation_Minimal_use", "Young_secondary_vegetation_Light_use", "Young_secondary_vegetation_Intense_use",
+                 "Intermediate_secondary_vegetation_Minimal_use", "Intermediate_secondary_vegetation_High_use", 
+                 "Mature_secondary_vegetation_Minimal_use",     "Mature_secondary_vegetation_High_use", 
+                 "Plantation_forest_Minimal_use", "Plantation_forest_Light_use", "Plantation_forest_Intense_use",
+                 "Pasture_Minimal_use", "Pasture_Light_use", "Pasture_Intense_use",
+                 "Cropland_Minimal_use", "Cropland_Light_use","Cropland_Intense_use",
+                 "Urban_Minimal_use", "Urban_Light_use", "Urban_Intense_use")
+    )
+  )
+```
+
+# Create model data for abundance
+
+```{r}
+# drop all rows with NAs for land use, use intensity and log_abundance_px and drop empty levels
+model_data_abundance <- drop_na(filtered_abundance, Predominant_land_use, Use_intensity, logAllInsectAbundance) %>% droplevels() 
+
+# check distributions
+hist(model_data_abundance$logAllInsectAbundance)
+hist(abundance$Log_abundance_pX)
+
+# Have a look at sample sizes
+table(model_data_abundance$Predominant_land_use, model_data_abundance$Use_intensity)
+table(model_data_abundance$LUI)
+
+length(unique(model_data_abundance$SS)) # 444 studies 
+length(unique(model_data_abundance$SSBS)) # 11516 sites
+
+  length(unique(model_data_biomass$SS)) # 444 studies
+ length(unique(model_data_biomass$SSBS)) # 11516 sites
+
+  length(unique(model_data_avg_mass$SS)) # 372 studies
+  length(unique(model_data_avg_mass$SSBS)) # 8621 sites
+  
+       
+
+rm(abundance, abundance_summary, filtered_abundance)
+```
+
+# Modelling ABUNDANCE ~ LU and creating the LU plot for all insects
+
+```{r}
+# maximal model
+m1 <- lmer(logAllInsectAbundance ~ Predominant_land_use + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_abundance)
+
+# remove block
+m2 <-lmer(logAllInsectAbundance ~ Predominant_land_use + (1 | Source_ID) + (1 | SS),
+    data = model_data_abundance)
+
+# remove study
+m3 <-lmer(logAllInsectAbundance ~ Predominant_land_use + (1 | Source_ID),
+    data = model_data_abundance)
+
+AIC(m1, m2, m3) # m1 best model
+
+# model estimates
+summary(m1)
+anova(m1)
+model_plot(m1)
+coef(summary(m1))
+
+
+# gather the effects and confidence intervals using simulation. Simulate 1000 times
+eff <- FEsim(m1, n.sims = 1000)
+
+  # make the term column a factor so it can be recoded
+  eff$term <- as.factor(eff$term)
+  
+  # rename factors for ease of visualisation
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary",
+                                "Predominant_land_useYoung secondary vegetation" = "YSV",
+                                "Predominant_land_useIntermediate secondary vegetation" = "ISV",
+                                "Predominant_land_useMature secondary vegetation" = "MSV",
+                                "Predominant_land_useSecondary vegetation" = "Secondary vegetation",
+                                "Predominant_land_usePlantation forest" = "Plantation",
+                                "Predominant_land_usePasture" = "Pasture",
+                                "Predominant_land_useCropland" = "Cropland",
+                                "Predominant_land_useUrban" = "Urban")
+  
+  # Add in upper and lower confidence intervals 
+  eff <- eff %>%
+    mutate(Upper_ci = (median + 1.96*sd)) %>%
+    mutate(Lower_ci = (median - 1.96*sd))
+  
+  
+    eff <- eff %>%
+        mutate(
+          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
+        mutate(
+          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
+        mutate(
+          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+  
+      eff[1,7] <- 0 #shift median
+      eff[1,8] <- 0 #shift upper
+      eff[1,9] <- 0 #shift lower
+      
+      colnames(eff)[1] <- "Predominant_land_use"
+      
+     p <- eff %>%
+        ggplot()+
+        aes(x = Predominant_land_use, y = Percent_diff)+
+        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+        geom_point(size = 3, position = position_dodge(width = 0.5))+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), position = position_dodge(width = 0.5), linewidth = 1)+
+        theme_classic()+
+        geom_vline(xintercept = 1.5, linetype = 2)+
+        geom_vline(xintercept = 2.5, linetype = 2)+
+        geom_vline(xintercept = 3.5, linetype = 2)+
+        geom_vline(xintercept = 4.5, linetype = 2)+
+        geom_vline(xintercept = 5.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 7.5, linetype = 2)+
+        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
+              axis.title.x = element_blank(),
+              axis.title.y = element_text(face = "bold"),
+              panel.border = element_rect(colour = "black",  fill=NA))+
+        xlab("Land use intensity class")+
+        ylab("log(total abundance) difference (%)") +
+        guides(color = guide_legend(
+          override.aes=list(shape = 15, size = 10)))
+     
+  #ggsave(filename = "../figures/abundance_LU.png",  plot = p, width = 6, height = 4, dpi = 300)
+     
+     
+     abundance_eff <- eff %>% mutate(Variable = "Abundance")
+  
+rm(eff, m1, m2, m3, p)     
+```
+
+# Combine Biomass, Mass and Abundance into one plot with three different colours
+
+```{r}
+biomass_eff <- biomass_eff %>% mutate("Response variable" = "Total biomass")
+avgmass_eff <- avgmass_eff %>% mutate("Response variable" = "Average mass")
+abundance_eff <- abundance_eff %>% mutate("Response variable" = "Species abundance")
+
+
+combined <- rbind(biomass_eff, avgmass_eff, abundance_eff)
+
+
+p <- combined %>%
+  ggplot(aes(x = Predominant_land_use,
+             y = Percent_diff,
+             colour = Variable,
+             group = Variable)) +
+  
+  # zero line
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  
+  # confidence intervals for each Variable
+  geom_linerange(aes(ymin = Percent_lower,
+                     ymax = Percent_upper),
+                 linewidth = 1,
+                 position = position_dodge(width = 0.75)) +
+  
+  # points for each Variable
+  geom_point(size = 3,
+             position = position_dodge(width = 0.75)) +
+  
+  # manual colours
+  scale_colour_manual(values = c(
+    "Total biomass" = "purple",
+    "Average mass" = "blue",
+    "Species abundance" = "red"
+  )) +
+  
+  # aesthetics & theme
+  theme_classic() +
+  geom_vline(xintercept = 1.5, linetype = 2) +
+  geom_vline(xintercept = 2.5, linetype = 2) +
+  geom_vline(xintercept = 3.5, linetype = 2) +
+  geom_vline(xintercept = 4.5, linetype = 2) +
+  geom_vline(xintercept = 5.5, linetype = 2) +
+  geom_vline(xintercept = 6.5, linetype = 2) +
+  geom_vline(xintercept = 7.5, linetype = 2) +
+  
+  theme(
+    axis.text.x = element_text(face = "bold", angle = 45, hjust = 1),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.position = "bottom"
+  ) +
+  
+  xlab("Land use intensity class") +
+  ylab("Difference in log response variable (%)") +
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 6, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  theme(legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 10)) 
+
+  #ggsave(filename = "../figures/C3 figures/C3-combined-plots.png",  plot = p, width = 8, height = 5, dpi = 300)
+  #saveRDS(combined, "../figures/C3 figures/C3-combined-df.rds")
+
+```
+
+# Modelling ABUNDANCE ~ LUI (LU + UI) and creating the LUI plot for all insects
+
+```{r}
+# maximal model
+m1 <- lmer(logAllInsectAbundance ~ LUI + (1 | Source_ID) + (1 | SS) + (1 | SSB), 
+           data = model_data_abundance)
+
+# remove block
+m2 <-lmer(logAllInsectAbundance ~ LUI + (1 | Source_ID) + (1 | SS),
+    data = model_data_abundance)
+
+# remove study
+m3 <-lmer(logAllInsectAbundance ~ LUI + (1 | Source_ID),
+    data = model_data_abundance)
+
+AIC(m1, m2, m3) # m1 best model
+
+# model estimates
+summary(m1)
+anova(m1)
+model_plot(m1)
+coef(summary(m1))
+
+
+# gather the effects and confidence intervals using simulation. Simulate 1000 times
+eff <- FEsim(m1, n.sims = 1000)
+
+  # make the term column a factor so it can be recoded
+  eff$term <- as.factor(eff$term)
+  
+  # rename factors for ease of visualisation
+  eff$term <- recode_factor(eff$term, "(Intercept)" = "Primary (minimal)",
+                            "LUIPrimary_Light_use" = "Primary (light)",
+                                "LUIPrimary_Intense_use" = "Primary (intense)",
+                            "LUIYoung_secondary_vegetation_Minimal_use" = "YSV (minimal)",
+                            "LUIYoung_secondary_vegetation_Light_use" = "YSV (light)",
+                            "LUIYoung_secondary_vegetation_Intense_use" = "YSV (intense)",
+                            "LUIIntermediate_secondary_vegetation_Minimal_use" = "ISV (minimal)",
+                            "LUIIntermediate_secondary_vegetation_High_use" = "ISV (high)",
+                            "LUIMature_secondary_vegetation_Minimal_use" = "MSV (minimal)",
+                            "LUIMature_secondary_vegetation_High_use" = "MSV (high)",
+                            "LUIPlantation_forest_Minimal_use" = "Plantation (minimal)",
+                            "LUIPlantation_forest_Light_use" = "Plantation (light)",
+                            "LUIPlantation_forest_Intense_use" = "Plantation (intense)",
+                            "LUIPasture_Minimal_use" = "Pasture (minimal)",
+                            "LUIPasture_Light_use" = "Pasture (light)",
+                            "LUIPasture_Intense_use" = "Pasture (intense)",
+                            "LUICropland_Minimal_use" = "Cropland (minimal)",
+                            "LUICropland_Light_use" = "Cropland (light)",
+                            "LUICropland_Intense_use" = "Cropland (intense)",
+                            "LUIUrban_Minimal_use" = "Urban (minimal)",
+                            "LUIUrban_Light_use" = "Urban (light)",
+                            "LUIUrban_Intense_use" = "Urban (intense)")
+
+                        
+  # Add in upper and lower confidence intervals 
+  eff <- eff %>%
+    mutate(Upper_ci = (median + 1.96*sd)) %>%
+    mutate(Lower_ci = (median - 1.96*sd))
+  
+  
+    eff <- eff %>%
+        mutate(
+          Percent_diff = (((exp(median[1] + median) - 1) / (exp(median[1]) - 1))*100)-100) %>%
+        mutate(
+          Percent_upper = (((exp(median[1] + Upper_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100) %>%
+        mutate(
+          Percent_lower = (((exp(median[1] + Lower_ci) - 1) / (exp(median[1]) - 1)) * 100) - 100)
+  
+      eff[1,7] <- 0 #shift median
+      eff[1,8] <- 0 #shift upper
+      eff[1,9] <- 0 #shift lower
+      
+      colnames(eff)[1] <- "Predominant_land_use"
+      
+    AbundanceLUIPlot <-  eff %>%
+        ggplot()+
+        aes(x = Predominant_land_use, y = Percent_diff)+
+        geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+        geom_point(size = 3, colour = "red")+
+        geom_linerange(aes(ymin = Percent_lower, ymax = Percent_upper), linewidth = 1, colour = "red")+
+        theme_classic()+
+        geom_vline(xintercept = 3.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 6.5, linetype = 2)+
+        geom_vline(xintercept = 8.5, linetype = 2)+
+        geom_vline(xintercept = 10.5, linetype = 2)+
+        geom_vline(xintercept = 13.5, linetype = 2)+
+        geom_vline(xintercept = 16.5, linetype = 2)+
+        geom_vline(xintercept = 19.5, linetype = 2)+
+        theme(axis.text.x = element_text(face= "bold", angle = 45, hjust = 1),
+              axis.title.x = element_blank(),
+              axis.title.y = element_text(face = "bold"),
+              panel.border = element_rect(colour = "black",  fill=NA))+
+        xlab("Land use intensity class")+
+        ylab("log(total abundance) difference (%)") +
+        guides(color = guide_legend(
+          override.aes=list(shape = 15, size = 10))) 
+      
+     
+       #ggsave(filename = "../figures/abundance_LUI.png",  plot = p, width = 8, height = 7, dpi = 300)
+    
+    AbundanceLUIPlot <- p
      
 rm(eff, m1, m2, m3, p)     
 ```
 
 
+# Combine all three LUI plots for biomass, mass and abundance. Stack them above one another with the x labels only appearing once
+
+```{r}
+library(patchwork)
+
+p1 <- AbundanceLUIPlot + theme(axis.title.y = element_text(size = 14), axis.text.x = element_text(size = 14))
+
+
+p1 <- AbundanceLUIPlot + theme(axis.title.y = element_text(size = 14), axis.text.x  = element_text(size = 14))
+p2 <- MassLUIPlot + themeaxis.title.y  = element_text(size = 14), axis.text.x  = element_text(size = 14))
+p3 <- BiomassLUIPlot + theme(axis.title.y = element_text(size = 14), axis.text.x  = element_text(size = 14))
+
+final_plot <- (p1 / p2 / p3) &
+  theme(legend.position = "bottom")
+
+# Now blank FIRST TWO x axes again (after global theme):
+final_plot[[1]] <- final_plot[[1]] + theme(axis.text.x = element_blank(),
+                                           axis.title.x = element_blank())
+final_plot[[2]] <- final_plot[[2]] + theme(axis.text.x = element_blank(),
+                                           axis.title.x = element_blank())
+  
+
+
+  ggsave(filename = "../figures/C3 figures/C3-combined-LUI.png",  plot = final_plot, width = 18, height = 10, dpi = 300)
+```
 
 
 # Calculate taxonomic precision at a site
@@ -2271,7 +3149,7 @@ total_rows <- nrow(all_insects_size)
 species_count <- sum(!is.na(all_insects_size$Trait_Value))
 genus_count <- sum(is.na(all_insects_size$Trait_Value) & !is.na(all_insects_size$genus_avg_body_length))
 family_count <- sum(is.na(all_insects_size$Trait_Value) & is.na(all_insects_size$genus_avg_body_length) &
-                    (!is.na(all_insects_size$family_avg_body_length) | !is.na(all_insects_size$family_avg)))
+                    (!is.na(all_insects_size$family_avg_body_length) | !is.na(all_insects_size$Rainford_family_avg)))
 
 # Calculate proportions
 species_prop <- species_count / total_rows
@@ -2862,7 +3740,6 @@ butterfly_genera_overlap <- leps_no_genus_length[leps_no_genus_length$Genus %in%
 rm(butterfly_genera_overlap, enrique_traits, leps_no_genus_length, leps_no_size, leps_overlap, unique_butterfly_genera)
 ```
 
-
 # What's the variance in the abundance weighted average body size among sites compared to among studies
 
 ```{r}
@@ -2878,7 +3755,7 @@ rm(variation_cwms)
 # Read in overall trait dataset
 ```{r}
 # Read in trait data
-traits <- read_excel("data/All_FamilyandOrder_Traits_for_JustinIsip.xlsx") 
+traits <- read_excel("../data/All_FamilyandOrder_Traits_for_JustinIsip.xlsx") 
 
 # As data frame 
 traits <- as.data.frame(traits)
@@ -2945,14 +3822,9 @@ trait_matrix <- pivot_trait %>%
 # Remove trailing space after column names
 names(trait_matrix) <- str_remove(names(trait_matrix), "\\s+$")
 
-sum(model_data_ab$Family == "") # 938 sites without family data
-
-model_data_ab %>% dplyr::select(SS, SSBST, Order, Family) %>% unique() %>% View()
-
-merged_data <- left_join(model_data_ab, trait_matrix, by = "Family")
-
 pivot_trait %>% filter(Trait == "Dispersal ability ") %>% View()
 ```
+
 # Code up just for size
 
 ```{r}
