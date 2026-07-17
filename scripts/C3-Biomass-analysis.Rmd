@@ -61,7 +61,7 @@ model_plot <-function(mod.for.plot){
 }
 ```
 
-# Read in Logghe et al 2025 which has body sie data for ~ 4800 arthropod species and makes the bulk of the GLiTRS trait data set
+# Read in Logghe et al 2025 which has body size data for ~ 4800 arthropod species and makes the bulk of the GLiTRS trait data set
 # Tidy and clean it to merge with PREDICTS trait data sets
 ```{r}
 # Upload logghe et al
@@ -92,7 +92,9 @@ logghe$Trait_Value <-  as.numeric(logghe$Trait_Value)
 # Read and tidy Geoffrey Su's ant trait data
 ```{r}
 # Load the data
-trait_ants <- read_excel(here("data", "SuFormacidaeBodyLength-2014-05-23.xlsx"))
+trait_ants <- read_excel(here("data", "SuFormacidaeBodyLength-2014-05-23.xlsx")) %>%  strings2factors()
+
+summary(trait_ants)
 
 # Rename body length average column
 trait_ants <- trait_ants %>% rename(avg_body_length_mm = "Body.Length..mm...worker..AVG")
@@ -212,7 +214,7 @@ insects <-  qread("/Users/jusi/Desktop/multi-groups/data/predicts-prepared-whole
 # Clean and tidy PREDICTS data then merge trait dataset based on taxon resolution
 ```{r}
 # Get relevant taxon cols for all insects
-taxon_insects <- insects %>% dplyr::select(SS, SSBS, Order, Family, Genus, Species, Taxon_name_entered, Best_guess_binomial, Merged_diversity, Diversity_metric_unit)
+taxon_insects <- insects %>% dplyr::select(SS, SSBS, Order, Family, Genus, Species, Taxon_name_entered, Best_guess_binomial, Merged_diversity, Diversity_metric_unit, Country)
 
 # Get rid of rows which aren't resolved to order level
 taxon_insects <- taxon_insects %>% filter(Order != "") # 1056 rows not resolved to order
@@ -358,6 +360,8 @@ all_insects_size <- taxon_insects_updated %>%
   filter(!is.na(final_body_length)) %>% # 1195212
   droplevels()
 
+
+all_insects_size %>% distinct(Family)
 ```
 
 # First split sites based on their latitude to tropical or temperate
@@ -435,7 +439,7 @@ all_insects_size %>%
   filter(Best_guess_binomial != "") %>% 
   group_by(Order) %>%
   summarise(n_species = n_distinct(Best_guess_binomial)) %>%
-  arrange(desc(n_species))  # Optional: orders by number of species
+  arrange(desc(n_species))  #  Optional: orders by number of species
 
 # Number of species with species-level body length data
  all_insects_size %>%
@@ -471,6 +475,218 @@ order_summary <- all_insects_size %>%
 print(order_summary)
 
 ```
+
+# Breakdown of the data
+```{r}
+# Which rows are assigned to family level but have no genus or sp. info?
+family_only_rows <- all_insects_size %>% 
+  filter(
+    !is.na(Family),
+    (is.na(Genus) | Genus == ""),
+    (is.na(Best_guess_binomial) | Best_guess_binomial == "")
+  )
+
+# Whats the percentage of the overall data frame that are resolved to ONLY family?
+NROW(family_only_rows) / NROW(all_insects_size)
+
+# Which rows have only a family-level body length value, but ARE taxonomically resolved to genus or species.
+genus_or_species_rows <- all_insects_size %>%
+  filter(
+    (!is.na(family_avg_body_length) | !is.na(Rainford_family_avg)),  # contains a family value from either column
+    is.na(Trait_Value),                   # no species level value
+    is.na(genus_avg_body_length),         # no genus level value
+    (!is.na(Genus) & Genus != "") | (!is.na(Best_guess_binomial) & Best_guess_binomial != "") # genus or species present
+  )
+
+# Whats the percentage of the overall data frame have only a family-level body length value, but ARE taxonomically resolved to genus or species.
+NROW(genus_or_species_rows) / NROW(all_insects_size)
+
+# A. The number of rows with only a family-level body length value but with genus or species assigned
+genus_or_sp_with_familyBL <- genus_or_species_rows %>%
+  filter(!is.na(Family)) %>%  # Ensure Family is not NA
+  group_by(Family) %>%
+  summarise(genus_or_species_n_rows = n())
+
+# B. The total number of rows for each Family in the entire all_insects_size data frame.
+total_family_counts <- all_insects_size %>%
+  filter(!is.na(Family)) %>%
+  group_by(Family) %>%
+  summarise(total_n_rows = n())
+
+# C. Join the two and calculate the proportion
+percentage <- genus_or_sp_with_familyBL %>%
+  inner_join(total_family_counts, by = "Family") %>%
+  mutate(percentage = genus_or_species_n_rows / total_n_rows)
+
+# Round to two decimal places
+percentage <- percentage %>%
+  mutate(percentage = round(percentage, 2))
+
+
+all_insects_size %>% filter(Family == "Apidae") %>% View()
+
+
+all_insects_size %>% filter(Genus == "Pheidole") %>% View()
+
+
+# Sense check Formicidae
+all_insects_size %>% filter(Family == "Formicidae",
+                              is.na(Trait_Value), # no species level value
+                              is.na(genus_avg_body_length), # no genus level value
+                            (!is.na(Genus) & Genus != "") | (!is.na(Best_guess_binomial) & Best_guess_binomial != "") # either genus or species is present
+                            ) %>% View()
+
+# Sense check Apidae
+all_insects_size %>% filter(Family == "Apidae",
+                              is.na(Trait_Value), # no species level value
+                              is.na(genus_avg_body_length), # no genus level value
+                            (!is.na(Genus) & Genus != "") | (!is.na(Best_guess_binomial) & Best_guess_binomial != "") # either genus or species is present
+                            ) %>% View()
+
+# Bees that are resolved to genus or species and matched to genus or species
+ all_insects_size %>%
+  filter(
+    Family == "Apidae",
+    # Resolved to genus or species
+    (!is.na(Genus) & Genus != "") | (!is.na(Best_guess_binomial) & Best_guess_binomial != ""),
+    # Matched to genus or species body size value
+    !is.na(genus_avg_body_length) | !is.na(Trait_Value)
+  )
+
+
+# For each family, how many genera are there without a genus level body length value?
+genera_without_genus_value <- all_insects_size %>%
+  filter(!is.na(Genus) & Genus != "") %>%           # must be a genus
+  group_by(Family, Genus) %>%
+  summarise(has_genus_value = any(!is.na(genus_avg_body_length)), .groups = "drop") %>%  # for each genus within each family, calculate whether the genus has a genus-level body length value present 
+  filter(!has_genus_value) %>%                       # keep only genera that do NOT have a genus-level value
+  group_by(Family) %>%
+  summarise(num_genera_without_genus_value = n()) # count the number of genera without a genus level body length value
+
+# Append num_genera_without_genus_value by joining on Family
+percentage_with_genera <- percentage %>%
+  left_join(genera_without_genus_value, by = "Family")
+
+# Some genera have numbers e.g. "Hyich91" - this is Hymenoptera, this is Ichneumoidae - it is different from 90 other Ichneumonidae that I have put into other groupings. The authors didn’t know the genus and so we will never know the genus - that data is not salvageable.
+
+# Lets remove such genera
+
+# Get genera without genus-level value, add a column if genus has digits
+genera_without_genus_value_and_digits <- all_insects_size %>%
+  filter(!is.na(Genus) & Genus != "") %>% # must be a genus
+  group_by(Family, Genus) %>%
+  summarise(has_genus_value = any(!is.na(genus_avg_body_length)), .groups = "drop") %>% # for each genus within each family, calculate whether the genus has a genus-level body length value present 
+  filter(!has_genus_value) %>% # keep only genera that do NOT have a genus-level value
+  mutate(real_sounding = !str_detect(Genus, "[0-9]")) # does the genus contain digits in its name?
+
+# Count real-sounding genera per family
+num_genera_with_real_names <- genera_without_genus_value_and_digits %>%
+  group_by(Family) %>%
+  summarise(num_genera_without_genus_value_with_real_names = sum(real_sounding))
+
+# Add new column
+percentage_with_genera <- percentage_with_genera %>%
+  left_join(num_genera_with_real_names, by = "Family")
+
+# Next step I want to calculate the total number of rows that belong to "real" genera (i.e. genera in num_genera_without_genus_value_with_real_names)
+
+# Filter for those genera without a genus level body length value and digits in their names (and so can actually be improved)
+real_genera <- genera_without_genus_value_and_digits %>%
+  filter(real_sounding) %>%
+  dplyr::select(Family, Genus)
+
+# Count rows for real genera in all_insects_size
+real_genera_row_counts <- all_insects_size %>%
+  inner_join(real_genera, by = c("Family", "Genus")) %>%
+  group_by(Family) %>%
+  summarise(num_rows_in_real_genera = n())
+
+# merge into main data frame
+percentage_with_genera <- percentage_with_genera %>%
+  left_join(real_genera_row_counts, by = "Family")
+
+# Next step, for each family, calculate the number of SSBS that the rows belonging to "real" genera come from
+real_genera_sites <- all_insects_size %>% 
+  inner_join(real_genera, by = c("Family", "Genus")) %>% 
+  filter(!is.na(SSBS) & SSBS != "")
+
+# count unique sites per family
+site_counts <- real_genera_sites %>%
+  group_by(Family) %>%
+  summarise(num_SSBS_in_real_genera = n_distinct(SSBS))
+
+# merge into main data frame
+percentage_with_genera <- percentage_with_genera %>% 
+  left_join(site_counts, by = "Family")
+
+# Next step, add which Order each Family belongs to
+
+# Select order family pairs
+order_family_combo <- all_insects_size %>%
+  dplyr::select(Order, Family) %>%
+  distinct()
+
+# Join and move Order to the front
+percentage_with_genera <- percentage_with_genera %>%
+  left_join(order_family_combo, by = "Family") %>%
+  dplyr::select(Order, everything())
+
+# There's very little benefit to refining the data when each site has only a single species of a family. So the ratio of num_rows_in_real_genera / num_SSBS_in_real_genera is also useful. High values are more appealing, other things being equal.
+percentage_with_genera <- percentage_with_genera %>%
+  mutate(avg_rows_per_SSBS_in_real_genera = num_rows_in_real_genera / num_SSBS_in_real_genera)
+
+
+# Next step, for each family (only including those those real-sounding genera; no digits) - I will create a column that is a list of unique Country values sortd by greaatest to least frequently occurring.
+
+# filter all_insects_size for rows in real genera
+rows_in_real_genera <- all_insects_size %>%
+  inner_join(real_genera, by = c("Family", "Genus")) %>% # keep all the observations in all_insects_size that have a match in real_genera
+  filter(!is.na(Country), Country != "") 
+
+# Count country frequencies per family, and arrange by frequency
+countries_ordered <- rows_in_real_genera %>%
+  group_by(Family, Country) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  arrange(Family, desc(n)) %>%
+  group_by(Family) %>%
+  summarise(
+    countries_by_frequency = paste(Country, collapse = ", ")
+  )
+
+# merge into main data frame
+percentage_with_genera <- percentage_with_genera %>%
+  left_join(countries_ordered, by = "Family")
+
+
+write.csv(percentage_with_genera, "percentage_with_generaV2.csv", row.names = FALSE)
+
+# find all the unique genera in the family Ichneumonidae 
+unique_genera_ichneumonidae <- all_insects_size %>%
+  filter(Family == "Ichneumonidae", !is.na(Genus), Genus != "") %>%
+  distinct(Genus) %>%
+  arrange(Genus)
+
+# find all the unique genera in the family Ichneumonidae 
+unique_genera_saturniidae <- all_insects_size %>%
+  filter(Family == "Saturniidae", !is.na(Genus), Genus != "") %>%
+  distinct(Genus) x%>%
+  arrange(Genus)
+
+# 1. Calculate the number of unique genera per family (for rows that have a family-level body length value but are taxonomically resolved to genus or species)
+genera_per_family <- genus_or_species_rows %>%
+  filter(!is.na(Genus), Genus != "") %>%      # remove empty genera  
+  group_by(Family) %>%
+  summarise(num_genera = n_distinct(Genus)) %>%
+  arrange(desc(num_genera))
+
+mean(c(0.97, 0.92, 0.47, 0.93, 0.95, 0.76, 0.93, 0.73, 0.30, 0))
+mean(c(0.76, 0.36, 0.99, 0.42, 0.61, 0.69, 0.97, 0.58, 0.30, 0.53))
+
+mean(c(0.90, 0.93, 0.82, 0.97, 0.99, 0.95, 0.99, 0.98, 0.97, 0.91))
+mean(c(0.99, 0.96, 0.99, 0.71, 0.96, 0.99, 0.97, 0.99, 0.96, 0.91))
+
+```
+
 
 
 # Analysis looking at ALL of the insects 
@@ -1162,6 +1378,7 @@ check_model(m4)
 rm(add_var, m1, m2, m3, m4)
 ```
 
+
 # Start with biomass ~ LU * Order analysis
 
 ```{r}
@@ -1367,6 +1584,7 @@ big_five <- big_five %>%
 table(big_five$Order, big_five$Predominant_land_use)
 
 ```
+
 
 # Collinearity
 
@@ -1842,6 +2060,8 @@ theme(
 rm(col_eff, combined, dip_eff, hemi_eff, hym_eff, lep_eff, p, other_eff)
 ```
 
+
+
 # Average mass of an insect at a site (FOR ALL INSECTS)
 
 ```{r}
@@ -1867,7 +2087,6 @@ site_avg_mass <- avg_mass %>%
 site_avg_mass %>%
   filter(is.na(LogAvgSiteBiomass) | LogAvgSiteBiomass == 0 | LogAvgSiteBiomass == "") %>% View()
 ```
-
 
 # Check if there are any studies where the average mass does not vary among sites and exclude them from the analysis
 # If mass is the same in all sites, then either its a 1-species study or its a study where they're all in the same family/genus and we don't have any size data more finely resolved
@@ -3267,478 +3486,7 @@ cat("Family-level:", ant_resolution$family_count,
 
 ```
 
-# From PREDICTS lets work out which groups we do not have size data for yet
 
-```{r}
-# From predicts, get me a list of those species without size data
-
-# Rows resolved to sp level but no species data and have an abundance greater than 1
-sp_no_size <- all_insects_size %>%
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-# Get a list of unique species
-unique_species <- unique(sp_no_size$Best_guess_binomial)
-
-
-summary_df <- all_insects_size %>%
-  filter(is.na(Trait_Value)) %>%  # Keep only rows without a Trait_Value
-  group_by(Genus, Species) %>%
-  summarise(
-    count_Trait = n(),            # Count of NA Trait_Value entries
-    .groups = "drop"
-  ) %>%
-  arrange(desc(count_Trait)) 
-
-library(dplyr)
-
-# Step 1: For each Genus, count total rows and how many have either Trait_Value or genus_avg_body_length
-genus_data_gap <- all_insects_size %>%
-  group_by(Genus) %>%
-  summarise(
-    total_records = n(),
-    #n_without_sp_value = sum(is.na(Trait_Value)),
-    n_without_genus_value = sum(is.na(genus_avg_body_length)),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(total_records))  # Most common genera without any trait info
-
-
-all_insects_size %>% count(Order) 
-
-# View top genera missing trait data
-head(genus_data_gap)
-
-
-```
-
-# Animal traits database
-
-```{r}
-# Load the datbase
-animaltraits <- read_excel("data/animaltraitsdatabase.xlsx")
-
-# Filter for insects
-just_insects <- animaltraits %>% filter(class == "Insecta")
-
-# Columns of interest
-just_insects <- just_insects %>% dplyr::select(genus, species, `body mass`, `body mass - units`, `original body mass`, `original body mass - units`)
-
-# Remove those rows without data
-just_insects <- just_insects %>%
-  filter(!if_all(c("body mass", "body mass - units", "original body mass", "original body mass - units"), is.na))
-
-# Convert kg into mg
-just_insects <- just_insects %>%
-  rename(body_mass = `body mass`) %>% # deal with space between body and mass
-  mutate(body_mass_mg = body_mass * 1e6)
-
-# Calculate an average for duplicate species entries
-just_insects <- just_insects %>%
-  group_by(species) %>%
-  summarise(
-    avg_body_mass_mg = mean(body_mass_mg, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Recreate genus column
-just_insects <- just_insects %>%
-  mutate(genus = sub(" .*", "", species)) # subtract everything before the first space
-
-# Which species are in animaltraits that are also species in my df without a size value?
-sp_overlap <- just_insects[just_insects$species %in% unique_species, ]
-
-length(unique(sp_overlap$species)) # 21 species added from AnimalTraits
-```
-
-# Do the same but work out if there are any genera which overlap between PREDICTS and Animal Traits
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-missing_genus_avg <- all_insects_size %>%
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Which genera are in Animal Traits that are also genera in my df without a size value?
-genera_overlap <- just_insects[just_insects$genus %in% missing_genus_avg$Genus, ]
-
-length(unique(genera_overlap$genus)) # 20 genera added from AnimalTraits
-
-rm(animaltraits, genera_overlap, genus_data_gap, just_insects, missing_genus_avg, sp_overlap, summary_df)
-```
-
-# Lets see the overlap between Global Ants and PREDICTS ant taxa with missing size data
-
-```{r}
-# Ant species without a size value in PREDICTS
-ants_no_size <- all_insects_size %>%
-  filter(Family == "Formicidae") %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-# Read in Globala Ants trait data
-globalants <- read.csv("data/globalants.csv")
-
-# Filter for columns of interest
-globalants <- globalants %>% dplyr::select(Genus, Species, Whole.body.length..mm.) %>% droplevels()
-
-# Create best guess binomial
-globalants <- globalants %>% mutate(Best_guess_binomial = str_c(Genus, Species, sep = " "))
-
-# Filter out those rows without a body length value
-globalants <- globalants %>% filter(`Whole.body.length..mm.` != "Not in paper")
-
-# Convert variable to numeric for summarizing
-globalants <- globalants %>%
-  mutate(Whole.body.length..mm. = as.numeric(Whole.body.length..mm.))
-
-# Calculate an average for duplicate species entries
-avg_BL_ants <- globalants %>%
-  group_by(Best_guess_binomial) %>%
-  summarise(
-    avg_body_length_mm = mean(`Whole.body.length..mm.`, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Recreate genus column
-avg_BL_ants <- avg_BL_ants %>%
-  mutate(genus = sub(" .*", "", Best_guess_binomial))  # subtract everything before the first space
-
-# Which ant species are in globalants that are also species in my df without a size value?
-ant_overlap <- avg_BL_ants[avg_BL_ants$Best_guess_binomial %in% ants_no_size$Best_guess_binomial, ] # 13 species
-```
-
-# Same again but for genera
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-ant_no_genus_length <- all_insects_size %>%
-  filter(Family == "Formicidae") %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(ant_no_genus_length$Genus)) # 58 genera without a size value
-
-# Get a list of the unique ant genera with size data from Global Ants
-unique_ant_genera <- avg_BL_ants %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in Global Ants that are also genera in my df without a size value?
-ant_genera_overlap <- ant_no_genus_length[ant_no_genus_length$Genus %in% unique_ant_genera$genus, ] # 6 genera we can add ant data for
-
-rm(ant_genera_overlap, ant_no_genus_length, ant_overlap, ants_no_size, avg_BL_ants, globalants, unique_ant_genera)
-```
-
-# Bee functional Trait Database
-
-```{r}
-# Load the data
-bee_traits <- read.csv("data/Sup Table 5 Trait Data Template.csv")
-
-# Select the cols of interest
-bee_traits <- bee_traits %>% dplyr::select(acceptedNameUsage, measurementValue, measurementUnit)
-
-bees_updated <- bee_traits %>%
-  mutate(
-    genus = word(acceptedNameUsage, 1),
-    species = word(acceptedNameUsage, 2),
-    Best_guess_binomial = paste(genus, species)
-  )
-
-# Those species in the database with less than two words in their acceptednameusage
-bee_traits %>%
-  filter(str_count(acceptedNameUsage, "\\S+") < 2)
-
-
-# Bee species without a size value in PREDICTS
-bees_no_size <- all_insects_size %>%
-  filter(Family %in% c("Apidae", "Halictidae", "Megachilidae", "Andrenidae", "Colletidae", "Melittidae", "Stenotritidae")) %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-bee_overlap <- bees_no_size[bees_no_size$Best_guess_binomial %in% bees_updated$Best_guess_binomial, ] %>% droplevels()
-
-length(unique(bees_no_size$Best_guess_binomial)) # 695 species without size data
-length(unique(bee_overlap$Best_guess_binomial)) # Looks like 243 species with bee body size data! Yay!
-
-243/695 # 34% increase!
-```
-
-# Bee Functional Trait Database genera
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-bee_no_genus_length <- all_insects_size %>%
-  filter(Family %in% c("Apidae", "Halictidae", "Megachilidae", "Andrenidae", "Colletidae", "Melittidae", "Stenotritidae")) %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(bee_no_genus_length$Genus)) # 126 genera without a size value
-
-# Get a list of the unique bee genera from the Bee Functional Trait Database
-unique_bee_genera <- bees_updated %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in the Bee Functional Trait Database that are also genera in my df without a size value?
-bee_genera_overlap <- bee_no_genus_length[bee_no_genus_length$Genus %in% unique_bee_genera$genus, ] # 59 genera!
-
-59/126 # 46% increase
-
-rm(bee_genera_overlap, bee_no_genus_length, bee_overlap, bee_traits, bees_no_size, bees_updated, unique_bee_genera)
-```
-
-# Morphological trait database of saproxylic beetles
-
-```{r}
-# beetle species without a size value in PREDICTS
-beetles_no_size <- all_insects_size %>%
-  filter(Order == "Coleoptera") %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  ) %>% 
-  droplevels()
-
-length(unique(beetles_no_size$Best_guess_binomial)) # 1452 beetle species without size data
-
-# Read in the data
-beetle_traits <- read.csv("data/Hagge_etal_saproxylic_beetle_morphological_trait_database_20210426.csv")
-
-# Select cols of interest
-beetle_traits <- beetle_traits %>% dplyr::select(family, species, body_length)
-
-# Recreate cols for matching
-beetle_traits <- beetle_traits %>%
-  separate(species, into = c("genus", "species"), sep = "_") %>% # seperate species into genus and species
-  mutate(best_guess_binomial = paste(genus, species, sep = " ")) # create best_guess_binomial
-
-# No species overlap :( - unsurprising given its saproxylic beetles
-beetle_overlap <- beetles_no_size[beetles_no_size$Best_guess_binomial %in% beetle_traits$Best_guess_binomial, ] 
-
-```
-
-# Lets see if any of the genera match between PREDICTS beetles and the trait database
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-beetle_no_genus_length <- all_insects_size %>%
-  filter(Order == "Coleoptera") %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(beetle_no_genus_length$Genus)) # 939 genera without a size value
-
-# Get a list of the unique beetle genera from the trait database
-unique_beetle_genera <- beetle_traits %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in the trait datatbase that are also genera in my df without a size value?
-beetle_genera_overlap <- beetle_no_genus_length[beetle_no_genus_length$Genus %in% unique_beetle_genera$genus, ] # 36 genera overlap!
-
-36/939 # 3% increase! eek!
-
-rm(beetle_genera_overlap, beetle_no_genus_length, beetle_overlap, beetle_traits, beetles_no_size, unique_beetle_genera)
-```
-
-# Data from: A summary of eight traits of Coleoptera, Hemiptera, Orthoptera and Araneae, occurring in grasslands in Germany
-
-```{r}
-# Read in the trait data
-mixed_traits <- read_delim("data/ArthropodSpeciesTraits.txt")
-
-# Subset for Orders of interest
-mixed_traits <- mixed_traits %>% filter(Order %in% c("Coleoptera", "Hemiptera", "Orthoptera"))
-
-# select cols of interest
-mixed_traits <- mixed_traits %>% dplyr::select(Family, SpeciesID, Body_Size)
-
-# filter PREDICTS for coleopterans, hemipterans and orthopteran species without a size value
-mixed_no_size <- all_insects_size %>%
-  filter(Order %in% c("Coleoptera", "Hemiptera", "Orthoptera")) %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-mixed_overlap <- mixed_no_size[mixed_no_size$Best_guess_binomial %in% mixed_traits$SpeciesID, ] 
-
-unique_counts <- mixed_overlap %>%
-  group_by(Order) %>%
-  summarise(n_unique_binomials = n_distinct(Best_guess_binomial)) %>%
-  arrange(n_unique_binomials)  # Optional: sort by count
-
-# match?
-# 14 species of Hemiptera
-# 18 species of Coleoptera
-
-```
-
-# Lets see if any of the genera match 
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-mixed_no_genus_length <- all_insects_size %>%
-  filter(Order %in% c("Coleoptera", "Hemiptera", "Orthoptera")) %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(mixed_no_genus_length$Genus)) # 1591 genera without a size value
-
-# Recreate cols for matching
-mixed_traits <- mixed_traits %>%
-  separate(SpeciesID, into = c("genus", "species"), sep = " ") %>% # seperate species into genus and species
-  mutate(best_guess_binomial = paste(genus, species, sep = " ")) # create best_guess_binomial
-
-# Get a list of the unique beetle genera from the trait database
-unique_mixed_genera <- mixed_traits %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in the trait datatbase that are also genera in my df without a size value?
-mixed_genera_overlap <- mixed_no_genus_length[mixed_no_genus_length$Genus %in% unique_mixed_genera$genus, ] # 18 genera overlap!
-
-18/1591 # 1% increase! eek!
-
-rm(mixed_genera_overlap, mixed_no_genus_length, mixed_no_size, mixed_overlap, mixed_traits, unique_counts, unique_mixed_genera)
-```
-
-# PREDICTS butterfly trait data from Cleary
-
-```{r}
-# read in the data
-butterfly_traits <- read.csv("data/butterfly_traits_full.csv")
-
-# Manipulate the columns so we can create best_guess_binomial and extract the body size value for each species
-butterfly_traits <- butterfly_traits %>%
-  mutate(
-    Best_guess_binomial = sub("^((\\S+)\\s+(\\S+)).*", "\\1", Species.Family.Subfamily.Tribe.Genus.AuthorSp.Range.Group.Geo.Gen.MeanWing.SexDi.Conspicuousness.Migratory),
-    body_size = sapply(strsplit(X, "\\s+"), function(x) as.numeric(x[7]))
-  )
-
-# filter PREDICTS for Lep species without a size value
-leps_no_size <- all_insects_size %>%
-  filter(Order == "Lepidoptera") %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-leps_overlap <- leps_no_size[leps_no_size$Best_guess_binomial %in% butterfly_traits$Best_guess_binomial, ] 
-
-length(unique(leps_no_size$Best_guess_binomial)) # 1846 species without size data
-length(unique(leps_overlap$Best_guess_binomial)) # Looks like 351 species with body size data! Yay!
-
-351/1846 # 19% increase
-```
-
-# Match lep genera
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-leps_no_genus_length <- all_insects_size %>%
-  filter(Order == "Lepidoptera") %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(leps_no_genus_length$Genus)) # 902 genera without a size value
-
-# Recreate cols for matching
-butterfly_traits <- butterfly_traits %>%
-  separate(Best_guess_binomial, into = c("genus", "species"), sep = " ") # seperate BGB into genus and species
-
-# Get a list of the unique lepidoptera genera from the trait database
-unique_butterfly_genera <- butterfly_traits %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in the trait datatbase that are also genera in my df without a size value?
-butterfly_genera_overlap <- leps_no_genus_length[leps_no_genus_length$Genus %in% unique_butterfly_genera$genus, ] # 165 genera overlap!
-
-165/902 # 18% increase! eek!
-
-rm(butterfly_genera_overlap, butterfly_traits, leps_no_genus_length, leps_no_size, leps_overlap, unique_butterfly_genera)
-```
-
-# Data from: Refining estimates of dry body weight from linear measurements in adult moths and butterflies (Lepidoptera)
-
-```{r}
-# read in the data
-enrique_traits <- read.csv("data/LEPSIZE2024.csv")
-
-# Select cols of interest
-enrique_traits <- enrique_traits %>% dplyr::select(FAMILY, SPECIES, DBw)
-
-# Clean and tidy the columns
-enrique_traits <- enrique_traits %>%
-  mutate(
-    # Remove quotes and extract words
-    clean_species = str_remove_all(SPECIES, '"'),
-    genus = word(clean_species, 1),
-    species = word(clean_species, 2),
-    Best_guess_binomial = paste(genus, species)
-  )
-
-# filter PREDICTS for Lep species without a size value
-leps_no_size <- all_insects_size %>%
-  filter(Order == "Lepidoptera") %>% 
-  filter(
-    !is.na(Species), # its a species
-    is.na(Trait_Value),                       # Trait_Value is an NA
-    Merged_diversity > 1                       # Merged_diversity is greater than 1
-  )
-
-leps_overlap <- leps_no_size[leps_no_size$Best_guess_binomial %in% enrique_traits$Best_guess_binomial, ] 
-
-length(unique(leps_no_size$Best_guess_binomial)) # 1846 species without size data
-length(unique(leps_overlap$Best_guess_binomial)) # Looks like 119 species with body size data! Yay!
-```
-
-# Match lep genera
-
-```{r}
-# First get a list of all the genera in PREDICTS without a size value
-leps_no_genus_length <- all_insects_size %>%
-  filter(Order == "Lepidoptera") %>% 
-  filter(is.na(genus_avg_body_length)) %>%  # Keep only rows with missing genus_avg_body_length
-  group_by(Genus) %>%
-  summarise(n_missing = n(), .groups = "drop") %>%
-  arrange(desc(n_missing))  # Optional: sort by most missing
-
-# Genera without a genera value
-length(unique(leps_no_genus_length$Genus)) # 902 genera without a size value
-
-# Get a list of the unique lepidoptera genera from the trait database
-unique_butterfly_genera <- enrique_traits %>% dplyr::select(genus) %>% distinct()
-
-# Which genera are in the trait datatbase that are also genera in my df without a size value?
-butterfly_genera_overlap <- leps_no_genus_length[leps_no_genus_length$Genus %in% unique_butterfly_genera$genus, ] # 250 genera overlap!
-
-250/902 # 28% increase! eek!
-
-rm(butterfly_genera_overlap, enrique_traits, leps_no_genus_length, leps_no_size, leps_overlap, unique_butterfly_genera)
-```
 
 # What's the variance in the abundance weighted average body size among sites compared to among studies
 
