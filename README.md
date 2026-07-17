@@ -1,8 +1,18 @@
 # Matched comparisons highlight divergent impacts of land-use change on the dominant orders of insects
 
-This repository contains all the code and some data used in the second chapter of my thesis which is currently being prepared for submission.
+This repository contains all the code and some data used in the [paper](ADD LINK WHEN PUBLISHED).
 
 Author(s): [Justin E Isip](mailto:j.isip@nhm.ac.uk) and [Andy Purvis](mailto:andy.purvis.@nhm.ac.uk).
+
+To cite the paper:
+
+Matched comparisons highlight divergent impacts of land-use change on the dominant orders of insects. 2026. Justin E Isip and Andy Purvis. ADD DETAILS WHEN PUBLISHED.
+
+To cite this repo:
+
+Justin Isip. Code for the paper v1. GitHub: nhcooper123/multi-groups. Zenodo. DOI: ADD ON PUBLICATION
+
+ADD ZENODO BADGE WHEN PUBLISHED
 
 ## Data
 
@@ -16,7 +26,13 @@ If you use the cleaned data please cite as follows:
 -------
 ## Analyses
 
-The analysis code is divided into `.Rmd` files that run the analyses for each section of the paper/supplementary materials, and more detailed scripts for the figures found in the paper.
+The analysis code is divided into `.Rmd` files in the following sections. 
+
+Data preparation
+
+Analyses
+
+
 
 -------
 ## Other folders
@@ -32,5 +48,5 @@ For reproducibility purposes, here is the output of `devtools::session_info()` u
 To rerun all the code with packages as they existed on CRAN at time of our analyses we recommend using the `checkpoint` package, and running this code prior to the analysis:
 
 ```{r}
-checkpoint("2021-14-05")
+checkpoint("")
 ```
