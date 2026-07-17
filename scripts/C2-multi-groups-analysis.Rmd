@@ -59,7 +59,6 @@ print(summarise_diversity(diversity))
 #### Merge sites
 ```{r}
 merged <- merge_sites(diversity, verbose = TRUE) 
-
 ```
 
 #### First, I will find the studies which contain data for multiple insect groups subset at the source level, rather than the study level. 
@@ -606,7 +605,6 @@ source("https://highstat.com/Books/Book2/HighstatLibV10.R")
 clean <- get_site_abundances_order(clean, order_folds = TRUE, verbose = TRUE)
 
 table(clean$order_fold) # number of rows for each site x order combination
-
 ```
 
 #### Fix up your explanatory variables
@@ -816,10 +814,6 @@ length(unique(clean$SSBS)) # 2580 sites after model prep
 # Add specific colours for each order
 group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#197BBD", Coleoptera = "#581845") 
 ```
-
-
-
-
 
 
 #### x vs x (template)
@@ -1279,8 +1273,7 @@ ggsave("./figures/log_figures_bycatch_removed/x_x.png", col_hym, height = 9, wid
 rm(x)
 ```
 
-
-
+ 
 
 #### Hymenoptera vs Coleoptera
 
@@ -1592,6 +1585,9 @@ summary(hc_m2)
 #### Check assumptions
 ```{r}
 model_plot(hc_m2)
+
+hc_m2_sim <- simulateResiduals(hc_m2, n = 1000)
+plot(hc_m2_sim) ; plot(nb1_sim)
 ```
 
 #### Remove other models
