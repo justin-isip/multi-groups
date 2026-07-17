@@ -218,6 +218,10 @@ ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
   )
 
+coleoptera_only <- hymenoptera_coleoptera %>% filter(Order == "Coleoptera")
+
+table(coleoptera_only$Sampling_method, coleoptera_only$Predominant_land_use)
+
 rm(plot_data, within_hymenoptera, hymenoptera_coleoptera)
 ```
 
@@ -442,6 +446,8 @@ hym_col_ss <-  model_data_sr_integer_only %>%
 
 # Model data
 hymenoptera_coleoptera <- model_data_sr_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% droplevels()
+
+
 ```
 
 # Inspect the richness data
@@ -1312,10 +1318,10 @@ within_hymenoptera <-
   droplevels()
 
 plot_data <- within_hymenoptera %>%
-  count(Which_group) %>%
+  count(Sampling_method) %>%
   mutate(
     prop = n / sum(n),
-    label = paste0(Which_group, "\n", n, " (", round(prop * 100, 1), "%)")
+    label = paste0(Sampling_method, "\n", n, " (", round(prop * 100, 1), "%)")
   )
 
 ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
@@ -1333,8 +1339,9 @@ ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
   )
 
-rm(lepidoptera_hymenoptera, within_hymenoptera, plot_data)
+table(within_hymenoptera$Which_group, within_hymenoptera$Predominant_land_use)
 
+rm(lepidoptera_hymenoptera, within_hymenoptera, plot_data)
 ```
 
 # Modelling 
@@ -1633,6 +1640,9 @@ ggplot(plot_sampling, aes(x = "", y = n, fill = Sampling_method)) +
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
     plot.subtitle = element_text(hjust = 0.5)
   )
+
+
+table(coleoptera_diptera$Sampling_method, coleoptera_diptera$Predominant_land_use)
 ```
 
 
