@@ -1,0 +1,584 @@
+---
+title: "Modelling taxon richness"
+author: "Andy Purvis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+This markdown models how species richness (relative to that in primary 
+vegetation) is affected by land use in each biogeographic realm, when the 
+effect of the taxonomic level of taxa in PREDICTS is controlled for. To ensure
+adequate sample sizes, some land-use/realm combinations are collapsed together.
+
+The result from this markdown is a data frame of relative species richness
+in each land-use class in each realm (with model coefficients being repeated
+as necessary).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r load-packages}
+library(blme)
+library(glmmTMB)
+library(DHARMa)
+library(qqplotr)
+library(performance)
+library(MuMIn)
+library(tictoc)
+library(sjPlot)
+library(dplyr)
+library(afex)
+library(ggeffects)
+library(ggplot2)
+library(GGally)
+```
+
+```{r function}
+# test for overdispersion: from Bolker GLMM FAQ
+overdisp_fun <- function(model) {
+  rdf <- df.residual(model)
+  rp <- residuals(model,type="pearson")
+  Pearson.chisq <- sum(rp^2)
+  prat <- Pearson.chisq/rdf
+  pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+  c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+```
+
+## Site-level data frame
+The file `abundance-model-data-prepared.qs` has `Taxon_richness` values along
+with all the requisite explanatory variables. However, it needs wrangling before
+it is used in modelling, to ensure sample sizes are large enough for reliable
+modelling (using PREDICTS' standard threshold of 100 sites); the wrangling also
+drops the few sites lacking `Taxon_fold_ss` (which would otherwise be in some
+but not all models, confounding AIC comparisons) and all the studies that have
+only a single species. Timber sites are also dropped. Here is a tabulation of 
+sites per PREDICTS land-use class x Realm combination.
+
+```{r load-data}
+ds <- qs::qread("data/abundance-model-data-prepared.qs") %>%
+  subset(!is.na(LUH2) & 
+           LUH2 != "Timber" &
+           !is.na(Taxon_fold_ss)) %>%
+  droplevels()
+
+# Drop any studies where the maximum taxon richness is 1 (i.e., single-species 
+# studies)
+
+max_tr <- tapply(ds$Taxon_richness, ds$SS, max, na.rm = TRUE)
+to_drop <- names(max_tr[max_tr == 1])
+
+cat(paste("Input file prepared on ",
+          attr(ds, which = "date_created"),
+          "\n"))
+cat(paste("Database extract dated ",
+          attr(ds, which = "date_database_extract"),
+          "\n"))
+cat("Single-species studies dropped from the data set:\n")
+print(to_drop)
+ds <- ds %>%
+  filter(! SS %in% to_drop) %>%
+  droplevels()
+
+cat(paste("Number of studies remaining",
+          length(unique(ds$SS)),
+          "\n"))
+cat(paste("Number of sites",
+          length(unique(ds$SSBS)),
+          "\n"))
+cat(paste("Number of countries",
+          length(unique(ds$Country)),
+          "\n"))
+
+summary_table <- ds %>%
+  group_by(LUH2, Realm) %>%
+  summarise(
+    n_rows = n(),
+    n_unique_SS = n_distinct(SS),
+    .groups = "drop"
+  ) %>%
+  mutate(cell_value = paste0(n_rows, " / ", n_unique_SS)) %>%  # combine counts
+  select(LUH2, Realm, cell_value) %>%
+  tidyr::pivot_wider(names_from = Realm, values_from = cell_value)
+
+# Display the table
+knitr::kable(summary_table)
+
+# Take a note of the set of realms in the data: used later on
+realm_set <- unique(ds$Realm)
+```
+
+As agreed with Simon Ferrier, we lump nitrogen-fixing cropland in with annual
+cropland. Although the CSIRO data do not differentiate age classes in secondary 
+vegetation, they have requested separate estimates for the three. There is no 
+class for Timber.
+
+```{r lump-classes}
+# Group NFX and ANN together
+levels(ds$LUH2)[levels(ds$LUH2) %in% c("Annual", "Nitrogen_fixing")] <- "Annual"
+
+summary_table <- ds %>%
+  group_by(LUH2, Realm) %>%
+  summarise(
+    n_rows = n(),
+    n_unique_SS = n_distinct(SS),
+    .groups = "drop"
+  ) %>%
+  mutate(cell_value = paste0(n_rows, " / ", n_unique_SS)) %>%  # combine counts
+  select(LUH2, Realm, cell_value) %>%
+  tidyr::pivot_wider(names_from = Realm, values_from = cell_value)
+
+# Display the table
+knitr::kable(summary_table)
+```
+
+Sample sizes are generally too small in Oceania, and there are a few other 
+combinations where there are fewer than 100 sites and/or fewer than 10 studies. 
+These are fixed by collapsing in what is hopefully a reasonable way, and also 
+taking a note of what the new names are made up of (used later on). Oceania is 
+always lumped with Indo-Malay (into a combined "realm" labelled "IMO"), and 
+sometimes also with Australasia (to give "IMOA"). Nearctic and Palearctic are 
+also occasionally lumped (as "Holarctic").
+
+```{r lump-realms}
+# Not enough Oceania data to model so lump with Indo-Malay (rather than with
+# Australasia, as Oceania and Indo-Malay are mostly tropical)
+levels(ds$Realm)[levels(ds$Realm) %in% c("Oceania", "Indo-Malay")] <- "IMO"
+
+# Make a new variable for the LU x Realm combination
+ds$LU_Realm <- paste(ds$LUH2, ds$Realm)
+
+# Make sensible aggregations to get all N > 100
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Perennial Nearctic",
+                "Perennial Palearctic")] <-
+  "Perennial Holarctic"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Managed_pasture Nearctic", 
+                "Managed_pasture Palearctic")] <-
+  "Managed_pasture Holarctic"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Annual Australasia", 
+                "Annual IMO")] <-
+  "Annual IMOA"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Rangelands Australasia",
+                "Rangelands IMO")] <-
+  "Rangelands IMOA"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Rangelands Nearctic",
+                "Rangelands Palearctic")] <-
+  "Rangelands Holarctic"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Managed_pasture Australasia", 
+                "Managed_pasture IMO")] <-
+  "Managed_pasture IMOA"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Urban Australasia",
+                "Urban IMO")] <-
+  "Urban IMOA"
+ds$LU_Realm[ds$LU_Realm %in% 
+              c("Mature_secondary_vegetation Australasia",
+                "Mature_secondary_vegetation IMO")] <-
+  "Mature_secondary_vegetation IMOA"
+
+# Combine Primary across realm, so all realms share the same baseline
+ds$LU_Realm[ds$LUH2 == "Primary"] <- "Primary"
+
+# Make LU_Realm a factor and make Primary the reference level
+ds$LU_Realm <- as.factor(ds$LU_Realm)
+ds$LU_Realm <- relevel(ds$LU_Realm, "Primary")
+
+# Sample sizes are all now at least 100
+
+summary_table <- ds %>%
+  group_by(LU_Realm) %>%
+  summarise(
+    n_rows = n(),                     # number of rows
+    n_unique_SS = n_distinct(SS),     # number of unique SS values
+    .groups = "drop"
+  )
+
+# Display the table
+knitr::kable(summary_table)
+
+
+```
+
+
+## Modelling
+`Taxon_richness` is hypothesised to be affected by `LU_Realm`, but is also
+expected to be affected deterministically by `Mean_taxon_precision`. As we want
+the effects of `LU_Realm` when `Mean_taxon_precision` is at its maximal value, 
+we first add a new column, `Taxonomic_imprecision`, calculated as (4 - 
+`Mean_taxon_precision`) / 4; 4 is the maximum value for `Mean_taxon_precision`,
+so this puts it onto a 0-1 scale to ease model convergence.
+
+```{r add-imprecision}
+ds$Taxonomic_imprecision <- (4 - ds$Mean_taxon_precision) / 4
+
+```
+
+
+### Using `glmmTMB`
+The `glmmTMB` package allows zero-inflated negative binomial models, likely a 
+better choice than a Poisson with an observation-level random intercept. We fit
+two negative binomial variants (`zinb1` and `zinb2`), a zero-inflated poisson 
+with an observation-level random intercept (`zipo`), and a poisson model with an
+observation-level random effect to accommodate overdispersion (`polre`). AIC 
+is used to choose among these alternative formulations, and favours `zinb2`.
+
+```{r glmmTMB1}
+tictoc::tic("Fitting zero-inflated negative-binomial1 GLMM in glmmTMB")
+zinb1 <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         poly(Taxonomic_imprecision, 2) +
+                         (1|SS) + (1|SSB) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom1(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~1,                 # Zero-inflation intercept
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+tictoc::toc()
+
+tictoc::tic("Fitting zero-inflated negative-binomial2 GLMM in glmmTMB")
+zinb2 <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         poly(Taxonomic_imprecision, 2) +
+                         (1|SS) + (1|SSB) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 1,                # Zero-inflation intercept
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+tictoc::toc()
+
+
+tictoc::tic("Fitting zero-inflated poisson GLMM with OLRE in glmmTMB")
+zipo <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         poly(Taxonomic_imprecision, 2) +
+                         (1 | SS) + (1 | SSB) + (1 | Taxon_fold_ss) + (1 |SSBS),
+                  data = ds,
+                  family = poisson(link = "log"), # Poisson
+                  ziformula = ~1,                 # Zero-inflation intercept
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+tictoc::toc()
+
+tictoc::tic("Fitting poisson GLMM with OLRE in glmmTMB")
+polre <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         poly(Taxonomic_imprecision, 2) +
+                         (1 | SS) + (1 | SSB) + (1 | Taxon_fold_ss) + (1 |SSBS),
+                  data = ds,
+                  family = poisson(link = "log"), # Poisson
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+tictoc::toc()
+
+AIC(zinb1, zinb2, zipo, polre)
+```
+
+Residuals are not very well distributed, suggesting that model fit may be 
+improved further by specifying a `dispformula`. Experimentation with several 
+formulations favours a dispersion model with `SS` as a random intercept in the 
+dispersion model. (Including it as a fixed effect requires too many extra 
+parameters for model convergence.)
+
+```{r refine}
+
+tictoc::tic("Refining richness model")
+# Make Taxonomic_imprecision linear (poly 2 gives + 1.8 AIC units)
+zinb2a <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|SSB) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 1,                # Zero-inflation intercept
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=5e3, eval.max=5e3)))
+
+# Drop zero-inflation
+zinb2ab <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 0,                # Zero-inflation intercept
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+
+
+# And also drop (1|SSB)
+zinb2b <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 1,                # Zero-inflation intercept
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+
+# And instead drop (1|Taxon_fold_ss)
+zinb2c <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|SSB), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 1,                # Zero-inflation intercept
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+
+# And instead drop zero inflation parameter, as the value was -5
+zinb2d <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LU_Realm + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|SSB) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  # DROPPING zero inflation as the value was -5
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=1e3, eval.max=1e3)))
+tictoc::toc()
+
+AIC(zinb2a, zinb2ab, zinb2b, zinb2c, zinb2d)
+
+
+```
+
+```{r choose}
+best <- zinb2b
+summary(best)
+performance::r2(best)
+car::Anova(best)
+```
+
+```{r diagnostics}
+sjPlot::plot_model(best,
+                   type = "diag")
+glmmTMB::diagnose(best)
+sim <- DHARMa::simulateResiduals(best, nSim = 250)
+plot(sim)
+DHARMa::testZeroInflation(sim)
+DHARMa::testDispersion(sim)
+DHARMa::plotResiduals(sim, form = ds$LU_Realm)
+DHARMa::plotResiduals(sim, form = ds$Taxonomic_imprecision)
+DHARMa::plotResiduals(sim, form = ds$Taxon_fold_ss)
+DHARMa::plotResiduals(sim, form = ds$Realm)
+DHARMa::plotResiduals(sim, form = ds$Biome)
+DHARMa::plotResiduals(sim, form = ds$SS)
+
+```
+
+```{r plots}
+
+pred <- ggeffects::ggpredict(best, terms = "LU_Realm", bias_correction = TRUE)
+ggplot2::ggplot(pred, aes(x = predicted, y = x)) +
+  geom_point(size = 3, color = "blue") +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2, color = "gray") +
+  labs(title = "Predicted Species Richness by LU x Realm",
+       x = "Predicted Species Richness", y = "LU x Realm") +
+  theme_minimal()
+
+```
+
+### Sensitivity of estimates for LU x Realm combinations
+8 models have been fitted, 7 of which have converged. Here is a pairs plot of 
+the richness estimates from those 7 (suppressing irrelevant warnings for 
+aesthetic reasons). The column and row relating to the best model, `zinb2a`, is
+highlighted.
+
+```{r basic, message = FALSE, warnings = FALSE}
+pred_zinb1 <- ggeffects::ggpredict(zinb1, terms = "LU_Realm")$predicted
+predictions <- data.frame(zinb1 = pred_zinb1)
+predictions$zinb2 <- ggeffects::ggpredict(zinb2, terms = "LU_Realm")$predicted
+predictions$zipo <- ggeffects::ggpredict(zipo, terms = "LU_Realm")$predicted
+predictions$polre <- ggeffects::ggpredict(polre, terms = "LU_Realm")$predicted
+predictions$zinb2a <- ggeffects::ggpredict(zinb2a, terms = "LU_Realm")$predicted
+predictions$zinb2b <- ggeffects::ggpredict(zinb2b, terms = "LU_Realm")$predicted
+predictions$zinb2d <- ggeffects::ggpredict(zinb2d, terms = "LU_Realm")$predicted
+
+```
+
+
+```{r ggpairs-highlight, message=FALSE, warning=FALSE}
+
+# Suppress GGally progress bar
+options(GGally.progress = FALSE)
+
+# Create ggpairs plot
+p <- ggpairs(predictions)
+
+# Highlight row and column 6 (zinb2b) with pastel background
+for (i in 1:p$nrow) {
+  for (j in 1:p$ncol) {
+    if (i == 6 || j == 6) {
+      p[i, j] <- p[i, j] + theme(panel.background = element_rect(fill = "lavender", color = NA))
+    }
+  }
+}
+
+print(p)
+```
+
+## Fit LU-only model
+Because estimating BII for so many land use x realm combinations has the 
+potential to overstretch the data, we also fit a simpler model with a single
+estimate per land-use class.
+
+```{r lu-only}
+lu_only <- glmmTMB::glmmTMB(Taxon_richness ~ 
+                         LUH2 + 
+                         Taxonomic_imprecision +
+                         (1|SS) + (1|SSB) + (1|Taxon_fold_ss), 
+                  data = ds,
+                  family = nbinom2(link = "log"), # Neg binom for overdispersion
+                  ziformula = ~ 1,                # Zero-inflation intercept
+                  dispformula = ~ (1|SS),       # Definite heterogeneity
+                  control = glmmTMB::glmmTMBControl(
+                    optCtrl = list(iter.max=5e3, eval.max=5e3)))
+
+summary(lu_only)
+performance::r2(lu_only)
+car::Anova(lu_only)
+
+lu_pred <- ggeffects::ggpredict(lu_only, 
+                                terms = "LUH2", 
+                                bias_correction = TRUE)
+ggplot2::ggplot(lu_pred, aes(x = predicted, y = x)) +
+  geom_point(size = 3, color = "blue") +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), 
+                 height = 0.2, 
+                 color = "gray") +
+  labs(title = "Predicted Species Richness by aggregated LUH2 class",
+       x = "Predicted Species Richness", y = "Land-Use Class") +
+  theme_minimal()
+```
+
+
+
+## Populating the LUH2 x Realm matrix
+Coefficients from the best model are converted into estimates of relative 
+species richness (with the baseline, primary vegetation, having a relative 
+richness of 1 in all realms) for each LUH2 class in each biogeographic realm. 
+Estimates are capped at 1, mirroring their handling in the BII pipeline. The 
+resulting data frame also indicates which model coefficient provided each value.
+
+```{r get_matrix}
+sec_coefs <- fixef(lu_only)$cond[c("LUH2Intermediate_secondary_vegetation",
+                                   "LUH2Mature_secondary_vegetation",
+                                   "LUH2Young_secondary_vegetation")]
+sec_ests <- exp(sec_coefs)
+mean_sec <- mean(sec_ests)
+
+LUH2_set <- c("c3ann", "c3nfx", "c3per",
+              "c4ann", "c4per", "pastr",
+              "primf", "primn", "range",
+              "secdf", "secdn", "urban")
+
+# Set up data frame to hold the values CSIRO wants
+rel_rich <- expand.grid(
+  realm = realm_set, # From when the data were first read in
+  LUH2 = LUH2_set
+)
+rel_rich$relative_richness <- NA # Relative richness from LU_Realm model
+rel_rich$model_term <- NA        # Which coefficient in the model it comes from
+rel_rich$lu_rel_richness <- NA   # Relative richness from lu_only model
+
+# Get names of the model factor levels other than the baseline (primary)
+coef_names <- paste("LU_Realm", pred$x, sep = "")
+coefs <- fixef(best, component = "cond")
+lu_coef_names <- paste("LUH2", lu_pred$x, sep = "")
+lu_coefs <- fixef(lu_only, component = "cond")
+
+# Estimate richness relative to primary (capping at 1)
+ests <- ifelse(pred$predicted > pred$predicted[1],
+               1,
+               pred$predicted/pred$predicted[1])
+
+# Do the same with the lu_only model
+lu_ests <- ifelse(lu_pred$predicted > lu_pred$predicted[1],
+               1,
+               lu_pred$predicted/lu_pred$predicted[1])
+
+# Primary is the baseline in each realm, so primn and primf get values of 1
+rel_rich$relative_richness[rel_rich$LUH2 %in% c("primf", "primn")] <- 1
+rel_rich$model_term[rel_rich$LUH2 %in% c("primf", "primn")] <- 
+  "Primary (intercept)"
+rel_rich$lu_rel_richness[rel_rich$LUH2 %in% c("primf", "primn")] <- 1
+
+# Secondary gets the mean of the three secondary coefficients from the lu_only 
+# model (and is NA for the LUxRealm model, as it would be a faff to do more!)
+rel_rich$lu_rel_richness[rel_rich$LUH2 %in% c("secdf", "secdn")] <- mean_sec
+
+# Loop through coefficients for the other LU_realm combinations
+for (lur in coef_names[-1]) {
+  # This loop puts the estimate of relative richness (calculated from the fixed 
+  # effect whose name is lur) in the right cell(s) of the rel_rich data frame.
+  # It also each time puts the relative richness from the land-use-only model
+  # (calculated from the fixed effect whose name is the lu part of lur) in all
+  # those rows, as lu_rel_richness; those assignments happen more than once, but
+  # that doesn't matter.
+  est <- ests[which(coef_names == lur)]
+  space_pos <- regexpr(" ", lur)
+  lu <- substring(lur, 9, space_pos - 1)
+  lu_est <- lu_ests[which(lu_coef_names == paste("LUH2", lu, sep = ""))]
+  realm <- substring(lur, space_pos + 1)
+  
+  # Which LUH2 classes should get each coefficient?
+  which_lu <- NA
+  if (lu == "Annual") which_lu <- c("c3ann", "c3nfx", "c4ann")
+  if (lu == "Managed_pasture") which_lu <- "pastr"
+  if (lu == "Perennial") which_lu <- c("c3per", "c4per")
+  if (lu == "Rangelands") which_lu <- "range"
+  if (lu == "Secondary") which_lu <- c("secdf", "secdn")
+  if (lu == "Urban") which_lu <- "urban"
+  
+  # Which realms should get each coefficient?
+  which_realm <- NA
+  if (realm == "Afrotropic") which_realm <- "Afrotropic"
+  if (realm == "Australasia") which_realm <- "Australasia"
+  if (realm == "Holarctic") which_realm <- c("Nearctic", "Palearctic")
+  if (realm == "IMO") which_realm <- c("Indo-Malay", "Oceania")
+  if (realm == "IMOA") which_realm <- c("Indo-Malay", "Oceania", "Australasia")
+  if (realm == "Nearctic") which_realm <- "Nearctic"
+  if (realm == "Neotropic") which_realm <- "Neotropic"
+  if (realm == "Palearctic") which_realm <- "Palearctic"
+  
+  # Put the right coefficient in the relevant rows of the data frame, and say 
+  # where it came from for traceability.
+  matches <- which(rel_rich$realm %in% which_realm &
+                   rel_rich$LUH2 %in% which_lu)
+  rel_rich$relative_richness[matches] <- est
+  rel_rich$model_term[matches] <- substring(lur, 9) # Omits "LU_Realm"
+  rel_rich$lu_rel_richness[matches] <- lu_est # Inefficient but OK
+}
+
+
+# Produce attributes for traceability
+attr(rel_rich, which = "date_created") <- Sys.Date()
+attr(rel_rich, which = "richness_file_date") <- attr(ds, which = "date_created")
+attr(rel_rich, which = "date_database_extract") <- 
+  attr(ds, which = "date_database_extract")
+
+# Save as an .rds so it has the attributes as part of it
+saveRDS(rel_rich, file = "output/relative_richness.rds")
+
+# Show the result in table form
+knitr::kable(rel_rich)
+
+```
+
