@@ -1,0 +1,1137 @@
+---
+title: "Untitled"
+output: html_document
+date: "2026-02-09"
+---
+
+# Clear the work space
+
+```{r}
+rm(list=ls())
+```
+
+# Load required packages
+
+```{r, include =FALSE}
+library(tidyverse) # data processing
+library(car) # for getting anova tables with significance values
+library(DHARMa) # for model criticism plots
+library(MuMIn) # for checking explanatory power of mixed effects models
+library(sjPlot) # for visualising results
+library(effects) # for extracting model effects
+library(merTools) # useful for a few things, but we're using it for extracting estimates for plotting
+library(emmeans) # testing multiple comparisons (but also useful for plotting)
+library(coefplot) # visualising model coefficients
+library(lmerTest) # for p values and degrees of freedom from anova table
+library(ggpubr) # arranging plots
+library(glmmTMB)
+library(glmm.hp)
+```
+
+# Load the datasets
+
+```{r}
+model_data_ab <- readRDS("./C2 data/ModelDataAbundanceNoBug.rds")
+model_data_sr <- readRDS("./C2 data/ModelDataSpeciesRichnessNoBug.rds")
+```
+
+# Convert to factors 
+```{r include = FALSE}
+str(model_data_ab)
+model_data_ab <- model_data_ab %>%
+  mutate(across(c(SS, SSB, SSBS), as.factor))
+
+str(model_data_sr)
+model_data_sr <- model_data_sr %>%
+  mutate(across(c(SS, SSB, SSBS), as.factor))
+
+length(unique(model_data_ab$SS))
+length(unique(model_data_sr$SS))
+length(unique(model_data_ab$SSBS))
+length(unique(model_data_sr$SSBS))
+```
+
+# First lets deal with the non-integer count data in the model data 
+
+```{r}
+# Are there non count data in model_data_ab?
+unique(levels(model_data_ab$Diversity_metric_unit)) # yes
+
+# First lets filter for integer only data
+model_data_ab_integer_only <- model_data_ab %>% filter(Diversity_metric_unit == "individuals") %>% droplevels()
+
+# Check again
+unique(levels(model_data_ab_integer_only$Diversity_metric_unit))
+
+# Are there non count data in model_data_sr?
+unique(levels(model_data_sr$Diversity_metric_unit)) # yes
+
+# First lets filter for integer only data
+model_data_sr_integer_only <- model_data_ab %>% filter(Diversity_metric_unit == "individuals") %>% droplevels()
+
+# Check again
+unique(levels(model_data_sr_integer_only$Diversity_metric_unit))
+```
+
+# Great now both the abundance and species richness model data frames are for count data only
+# But are there still non-integers despite the fact we've filtered only for individuals?
+```{r}
+# If you subtract each total abundance value in my data frame from the rounded version of the same value, is that value less than 0.000000001? (across all values)
+all(abs(model_data_ab_integer_only$TotalAbundance -
+        round(model_data_ab_integer_only$TotalAbundance)) < 1e-8,
+    na.rm = TRUE) # FALSE
+
+all(abs(model_data_sr_integer_only$SpeciesRichness -
+        round(model_data_sr_integer_only$SpeciesRichness)) < 1e-8,
+    na.rm = TRUE) # TRUE
+
+# There are still non-integers in the abundance data, lets filter for them
+
+# Check which values are non-integers
+still_non_integer_abundance <- model_data_ab_integer_only %>%
+  dplyr::filter(abs(TotalAbundance - round(TotalAbundance)) > 1e-8) %>% dplyr::select(SS, SSBS, SSBST, Best_guess_binomial, Diversity_metric, Diversity_metric_unit, Diversity_metric_type,Effort_corrected_measurement, Corrected_sampling_effort,  merged_diversity, TotalAbundance, SpeciesRichness, to_add, logAbundance) %>%  droplevels()
+
+# Which studies?
+unique(still_non_integer_abundance$SS)
+
+# Ok lets round all of the Total Abundance values to the nearest integer, any value greater than 0.5 should become 1!
+still_non_integer_abundance <- still_non_integer_abundance %>%
+  mutate(
+    RoundedTotalAbundance = if_else(
+      TotalAbundance >= 0.5,
+      ceiling(TotalAbundance),
+      0
+    )
+  )
+
+# Ok lets merge these rounded values back into the overall df for those SSBSTs
+rounded_abundances <- still_non_integer_abundance %>%  dplyr::select(SSBST, RoundedTotalAbundance) # 407 SSBSTs have had their abundances rounded
+
+# Merge into original data frame
+model_data_ab_integer_only <- model_data_ab_integer_only %>% 
+    left_join(rounded_abundances, by = ("SSBST")) %>%  # join the values in by their ssbst
+  mutate(
+    TotalAbundance = coalesce(RoundedTotalAbundance, TotalAbundance) # if a rounded values exists, assign it to TotalAbundance otherwise keep the original value
+  ) %>% 
+  dplyr::select(-RoundedTotalAbundance)
+
+# Ok now all the abundance values should be integers now that the non-integers have been rounded
+all(abs(model_data_ab_integer_only$TotalAbundance -
+        round(model_data_ab_integer_only$TotalAbundance)) < 1e-8,
+    na.rm = TRUE) # TRUE - all the values in TotalAbundance are integers
+
+# Remove old data frames
+rm(model_data_ab, model_data_sr, still_non_integer_abundance, rounded_abundances)
+```
+
+# Function to robustly extract delta-method R2m, regardless of model structure returned from r.squaredGLMM()
+```{r}
+get_R2m_delta <- function(x) {
+  if (is.matrix(x)) {
+    rn <- rownames(x)
+    cn <- colnames(x)
+    if (!is.null(rn) && "delta" %in% rn && !is.null(cn) && "R2m" %in% cn) {
+      return(as.numeric(x["delta", "R2m"]))
+    }
+  }
+  if (is.numeric(x) && !is.null(names(x)) && "R2m" %in% names(x)) {
+    # lme4-style returns named numeric vector c(R2m, R2c)
+    return(as.numeric(x["R2m"]))
+  }
+  stop("Unexpected R2 structure returned by r.squaredGLMM.")
+}
+```
+
+# Function to calculate interaction importance
+```{r}
+
+compute_interaction_importance <- function(m_interaction, m_additive, m_plu_only) {
+  
+  R2_int <- r.squaredGLMM(m_interaction)
+  R2_add <- r.squaredGLMM(m_additive)
+  R2_plu <- r.squaredGLMM(m_plu_only)
+
+  R2m_int <- get_R2m_delta(R2_int)
+  R2m_add <- get_R2m_delta(R2_add)
+  R2m_plu <- get_R2m_delta(R2_plu)
+
+  r2m_for_interaction <- max(R2m_int - R2m_add, 0) # if the r2m for the additive model > interactive model, give me 0.
+  interaction_importance <- r2m_for_interaction / (R2m_plu + r2m_for_interaction)
+
+  list(
+    R2m_int_delta = R2m_int,
+    R2m_add_delta = R2m_add,
+    R2m_plu_delta = R2m_plu,
+    r2m_for_interaction = r2m_for_interaction,
+    interaction_importance = interaction_importance
+  )
+}
+```
+
+
+
+# Ok now all the abundance and species richness values for both model datasets are integers we can start calculating the interaction importance
+
+#### Hymenoptera vs Coleoptera
+
+#### Abundance 
+```{r}
+hym_col_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique()
+
+# Model data
+hymenoptera_coleoptera <- model_data_ab_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.47
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+# Model data
+hymenoptera_coleoptera <- model_data_sr_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera"))
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.42
+
+rm(m_additive, m_interaction, m_plu_only, results, hymenoptera_coleoptera)
+```
+
+
+#### Hymenoptera vs Diptera
+
+#### Abundance
+```{r}
+# Filter for studies that only compare hymenoptera and diptera
+dip_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Filter our abundance model dataset for those studies:
+diptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% dip_hym_ss) %>% 
+  # then filter the two orders we want to compare, as some studies will have include more than those two orders
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.76
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+# Model data
+diptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% dip_hym_ss) %>% filter(Order %in% c("Diptera", "Hymenoptera"))
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.61
+
+rm(m_additive, m_interaction, m_plu_only, results, diptera_hymenoptera)
+```
+
+#### Hymenoptera vs Hemiptera
+
+#### Abundance
+```{r}
+#Extract the studies and create the model data
+hemi_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% hemi_hym_ss) %>% filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% droplevels()
+
+# There are only 4 observations for each order in pasture
+table(hemiptera_hymenoptera$Higher_taxon, hemiptera_hymenoptera$Predominant_land_use) 
+
+# Lets remove pasture as there are too few rows to permit robust modelling
+hemiptera_hymenoptera <- hemiptera_hymenoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.73
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+#Extract the studies and create the model data
+hemi_hym_ss <-  model_data_sr_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% hemi_hym_ss) %>% filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% droplevels()
+
+# Lets remove pasture as there are too few rows to permit robust modelling
+hemiptera_hymenoptera <- hemiptera_hymenoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.69
+
+rm(m_additive, m_interaction, m_plu_only, results, hemiptera_hymenoptera)
+```
+
+
+#### Hymenoptera vs Lepidoptera 
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+lep_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+lepidoptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% lep_hym_ss) %>% filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% droplevels()
+
+# There are only 1 observations for each order in plantation, 7 in urban might be ok
+table(lepidoptera_hymenoptera$Higher_taxon, lepidoptera_hymenoptera$Predominant_land_use) 
+
+# Lets remove plantation as there are too few rows to permit robust modelling
+lepidoptera_hymenoptera <- lepidoptera_hymenoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+# Model data
+lepidoptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% lep_hym_ss) %>% filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% droplevels()
+
+# Lets remove pasture as there are too few rows to permit robust modelling
+lepidoptera_hymenoptera <- lepidoptera_hymenoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.53
+
+rm(m_additive, m_interaction, m_plu_only, results, lepidoptera_hymenoptera)
+```
+
+#### Coleoptera vs Diptera 
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+col_dip_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Diptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_diptera <- model_data_ab_integer_only %>% filter(SS %in% col_dip_ss) %>% filter(Order %in% c("Coleoptera", "Diptera")) %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.76
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+# Model data
+coleoptera_diptera <- model_data_sr_integer_only %>% filter(SS %in% col_dip_ss) %>% filter(Order %in% c("Coleoptera", "Diptera")) %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.97
+
+rm(m_additive, m_interaction, m_plu_only, results, coleoptera_diptera)
+```
+
+
+#### Coleoptera vs Hemiptera
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+col_hemi_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_hemiptera <- model_data_ab_integer_only %>% filter(SS %in% col_hemi_ss) %>% filter(Order %in% c("Coleoptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 4)
+table(coleoptera_hemiptera$Higher_taxon, coleoptera_hemiptera$Predominant_land_use) 
+coleoptera_hemiptera <- coleoptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.92
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+```{r}
+# Model data
+coleoptera_hemiptera <- model_data_sr_integer_only %>% filter(SS %in% col_hemi_ss) %>% filter(Order %in% c("Coleoptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 4)
+coleoptera_hemiptera <- coleoptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.36
+
+rm(m_additive, m_interaction, m_plu_only, results, coleoptera_hemiptera)
+```
+
+
+#### Coleoptera vs Lepidoptera
+
+#### Abundance
+```{r}
+#Extract the studies and create the model data
+col_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 1)
+table(coleoptera_lepidoptera$Higher_taxon, coleoptera_lepidoptera$Predominant_land_use) 
+coleoptera_lepidoptera <- coleoptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.93
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness 
+
+```{r}
+# Model data
+coleoptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data
+coleoptera_lepidoptera <- coleoptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.97
+
+rm(m_additive, m_interaction, m_plu_only, results, coleoptera_lepidoptera)
+```
+
+#### Diptera vs Hemiptera 
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+dip_hemi_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_hemiptera <- model_data_ab_integer_only %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 1)
+table(diptera_hemiptera$Higher_taxon, diptera_hemiptera$Predominant_land_use) 
+diptera_hemiptera <- diptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.93
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+
+#### Species richness 
+
+```{r}
+# Model data
+diptera_hemiptera <- model_data_sr_integer_only %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data
+diptera_hemiptera <- diptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+    (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.99
+
+rm(m_additive, m_interaction, m_plu_only, results, diptera_hemiptera)
+```
+
+#### Diptera vs Lepidoptera
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+dip_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data (n = 1)
+table(diptera_lepidoptera$Higher_taxon, diptera_lepidoptera$Predominant_land_use) 
+diptera_lepidoptera <- diptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+   (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+   (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.93
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+
+#### Species richness 
+
+```{r}
+# Model data
+diptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data
+diptera_lepidoptera <- diptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+  (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+   (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+  (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.58
+
+rm(m_additive, m_interaction, m_plu_only, results, diptera_lepidoptera)
+```
+
+#### Lepidoptera vs Hemiptera 
+
+#### Abundance
+
+```{r}
+#Extract the studies and create the model data
+hemi_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data (n = 1)
+table(hemiptera_lepidoptera$Higher_taxon, hemiptera_lepidoptera$Predominant_land_use) 
+hemiptera_lepidoptera <- hemiptera_lepidoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +
+    (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon +
+   (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use +
+   (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.93
+
+rm(m_additive, m_interaction, m_plu_only, results)
+```
+
+#### Species richness
+
+```{r}
+# Model data
+hemiptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% droplevels()
+
+# Remove pasture as has too few data
+hemiptera_lepidoptera <- hemiptera_lepidoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Interaction model (includes main effects + interaction)
+m_interaction <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+  (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+# Additive model (main effects only, no interaction)
+m_additive <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon +
+   (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+# Predominant_land_use-only model (only land use as fixed effect)
+m_plu_only <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use +
+  (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+results <- compute_interaction_importance(m_interaction, m_additive, m_plu_only)
+results
+
+# Interaction importance = 0.58
+
+rm(m_additive, m_interaction, m_plu_only, results, diptera_lepidoptera)
+
+```
+
