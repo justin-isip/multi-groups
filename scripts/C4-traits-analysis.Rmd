@@ -1001,7 +1001,7 @@ NewDataOccurrenceMass <- NewDataOccurrenceMass %>%
     # It takes values on the logit (link) scale (from −∞ to +∞) and transforms them into probabilities between 0 and 1.
     LowerProb = plogis(OccurrenceLwr), # 95% CI lower bound
     UpperProb = plogis(OccurrenceUpr) # 95% CI upper bound
-  )
+  ) 
 
 # Extract coefficient in primary
 fixef(oc_m1)["log10_mass"]
