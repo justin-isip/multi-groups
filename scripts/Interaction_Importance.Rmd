@@ -1026,7 +1026,9 @@ glmm.hp(hc_m1)
 # variance explained by LUI:Order/(variance explained by LUI + variance explained by LUI:Order)
 0.0141/(0.0032+0.0141)
 
-# Interaction importance = 0.82
+0.0139/(0.0056 + 0.0139)
+
+# Interaction importance = 0.71
 
 # relevel model with Hymenoptera as reference level
 hymenoptera_coleoptera <- within(hymenoptera_coleoptera, Higher_taxon <- relevel(Higher_taxon, ref = "Hymenoptera"))
