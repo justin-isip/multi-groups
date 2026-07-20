@@ -10,7 +10,7 @@ Matched comparisons highlight divergent impacts of land-use change on the domina
 
 To cite this repo:
 
-Justin Isip. Code for the paper v1. GitHub: nhcooper123/multi-groups. Zenodo. DOI: ADD ON PUBLICATION
+Justin Isip. Code for the paper v1. GitHub: justin-isip/multi-groups. Zenodo. DOI: ADD ON PUBLICATION
 
 ADD ZENODO BADGE WHEN PUBLISHED
 
@@ -21,7 +21,7 @@ ADD ZENODO BADGE WHEN PUBLISHED
 Raw data are not included in this repo due to size limitations. All raw and cleaned data are available from the [NHM Data Portal](). 
 
 If you use the cleaned data please cite as follows: 
-> Justin E Isip.. (). Dataset: Lepidosaur bite-force data. Natural History Museum Data Portal (data.nhm.ac.uk).
+> Justin E Isip.. (). Dataset: multi-group insect data. Natural History Museum Data Portal (data.nhm.ac.uk).
 
 -------
 ## Analyses
