@@ -1,0 +1,2353 @@
+---
+title: " Matched comparisons highlight divergent impacts of land-use change on the dominant orders of insects"
+author: "Justin Ephraim Isip"
+date: "2026-01-13"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+# Overview
+This document reruns Chapter 2 pairwise comparisons among focal insect orders using `glmmTMB`.
+Abundance and species richness are analysed separately using negative-binomial mixed models, with zero-inflation included where warranted by diagnostics.
+
+# Load packages
+
+```{r load-packages}
+library(tidyverse)
+library(glmmTMB)
+library(DHARMa)
+library(car)
+library(MuMIn)
+library(emmeans)
+library(ggpubr)
+library(here)
+library(performance)
+library(glmm.hp)
+```
+
+# Load data
+
+```{r load-data}
+model_data_ab <- readRDS(here::here("data", "model_data_ab.rds"))
+model_data_sr <- readRDS(here::here("data", "model_data_sr.rds"))
+```
+
+# Prepare data
+
+```{r include = FALSE}
+model_data_ab <- model_data_ab %>%
+  mutate(across(c(SS, SSB, SSBS), as.factor))
+
+model_data_sr <- model_data_sr %>%
+  mutate(across(c(SS, SSB, SSBS), as.factor))
+
+# Land use levels
+land_use_levels <- c("Primary", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban") 
+
+# Add specific colours for each order
+group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#197BBD", Coleoptera = "#581845") 
+
+bee_families <- c(
+  "Andrenidae", "Apidae", "Colletidae", "Dasypodaidae",
+  "Halictidae", "Megachilidae", "Meganomiidae",
+  "Melittidae", "Stenotritidae"
+)
+```
+
+# Handling non-integer count data 
+
+```{r}
+# Are there non count data in model_data_ab?
+unique(levels(model_data_ab$Diversity_metric_unit)) # yes
+
+# First lets filter for integer only data
+model_data_ab_integer_only <- model_data_ab %>% filter(Diversity_metric_unit == "individuals") %>% droplevels()
+
+# Check again
+unique(levels(model_data_ab_integer_only$Diversity_metric_unit))
+
+# Are there non count data in model_data_sr?
+unique(levels(model_data_sr$Diversity_metric_unit)) # yes
+
+# First lets filter for integer only data
+model_data_sr_integer_only <- model_data_sr %>% filter(Diversity_metric_unit == "individuals") %>% droplevels()
+
+# Check again
+unique(levels(model_data_sr_integer_only$Diversity_metric_unit))
+
+# Great now both the abundance and species richness model data frames are for count data only
+# But are there still non-integers despite the fact we've filtered only for individuals?
+
+# If you subtract each total abundance value in my data frame from the rounded version of the same value, is that value less than 0.000000001? (across all values)
+all(abs(model_data_ab_integer_only$TotalAbundance -
+        round(model_data_ab_integer_only$TotalAbundance)) < 1e-8,
+    na.rm = TRUE) # FALSE
+
+all(abs(model_data_sr_integer_only$SpeciesRichness -
+        round(model_data_sr_integer_only$SpeciesRichness)) < 1e-8,
+    na.rm = TRUE) # TRUE
+
+# There are still non-integers in the abundance data, lets filter for them
+
+# Check which values are non-integers
+still_non_integer_abundance <- model_data_ab_integer_only %>%
+  dplyr::filter(abs(TotalAbundance - round(TotalAbundance)) > 1e-8) %>% dplyr::select(SS, SSBS, SSBST, Best_guess_binomial, Diversity_metric, Diversity_metric_unit, Diversity_metric_type,Effort_corrected_measurement, Corrected_sampling_effort,  merged_diversity, TotalAbundance, SpeciesRichness, to_add, logAbundance) %>%  droplevels()
+
+# Which studies?
+unique(still_non_integer_abundance$SS)
+
+# Ok lets round all of the Total Abundance values to the nearest integer, any value greater than 0.5 should become 1!
+still_non_integer_abundance <- still_non_integer_abundance %>%
+  mutate(
+    RoundedTotalAbundance = if_else(
+      TotalAbundance >= 0.5,
+      ceiling(TotalAbundance),
+      0
+    )
+  )
+
+# Ok lets merge these rounded values back into the overall df for those SSBSTs
+rounded_abundances <- still_non_integer_abundance %>%  dplyr::select(SSBST, RoundedTotalAbundance) # 407 SSBSTs have had their abundances rounded
+
+# Merge into original data frame
+model_data_ab_integer_only <- model_data_ab_integer_only %>% 
+    left_join(rounded_abundances, by = ("SSBST")) %>%  # join the values in by their ssbst
+  mutate(
+    TotalAbundance = coalesce(RoundedTotalAbundance, TotalAbundance) # if a rounded values exists, assign it to TotalAbundance otherwise keep the original value
+  ) %>% 
+  dplyr::select(-RoundedTotalAbundance)
+
+# Ok now all the abundance values should be integers now that the non-integers have been rounded
+all(abs(model_data_ab_integer_only$TotalAbundance -
+        round(model_data_ab_integer_only$TotalAbundance)) < 1e-8,
+    na.rm = TRUE) # TRUE - all the values in TotalAbundance are integers
+
+# Remove old data frames
+rm(model_data_ab, model_data_sr, still_non_integer_abundance, rounded_abundances)
+```
+
+# Helper function
+
+```{r}
+extract_emmeans_contrasts <- function(model, data) {
+  emm <- emmeans(
+    model,
+    ~ Predominant_land_use | Higher_taxon,
+    type = "link"
+  )
+
+  comparisons <- contrast(
+    emm,
+    method = "trt.vs.ctrl",
+    ref = "Primary"
+  )
+
+  comparisons_df <- as.data.frame(
+    summary(comparisons, infer = c(TRUE, TRUE), level = 0.95)
+  ) %>%
+    mutate(
+      Predominant_land_use = stringr::str_remove(contrast, " - Primary")
+    ) %>%
+    rename(
+      lower.CL = asymp.LCL,
+      upper.CL = asymp.UCL
+    )
+
+  primary_rows <- expand.grid(
+    Predominant_land_use = "Primary",
+    Higher_taxon = levels(data$Higher_taxon),
+    stringsAsFactors = FALSE
+  ) %>%
+    mutate(
+      contrast = "Primary - Primary",
+      estimate = 0,
+      SE = NA_real_,
+      df = Inf,
+      lower.CL = 0,
+      upper.CL = 0,
+      z.ratio = NA_real_,
+      p.value = NA_real_
+    )
+
+  bind_rows(primary_rows, comparisons_df) %>%
+    arrange(Higher_taxon, Predominant_land_use)
+}
+
+```
+
+
+# Hymenoptera versus Coleoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+hym_col_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hymenoptera_coleoptera <- model_data_ab_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% droplevels()
+```
+
+# Inspect Hymenoptera composition
+
+```{r}
+# Check the breakdown of ants, bees and wasps based on family
+# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
+within_hymenoptera <- hymenoptera_coleoptera %>%
+  filter(Higher_taxon == "Hymenoptera") %>%
+  mutate(
+    Which_group = case_when(
+      Family == "Formicidae" ~ "Ants",
+      Family %in% bee_families ~ "Bees",
+      TRUE ~ "Wasps"
+    )
+  ) %>%
+  droplevels()
+
+plot_data <- within_hymenoptera %>%
+  count(Which_group) %>%
+  mutate(
+    prop = n / sum(n),
+    label = paste0(Which_group, "\n", n, " (", round(prop * 100, 1), "%)")
+  )
+
+ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.5) +
+  labs(
+    title = paste0("Coleoptera versus Hymenoptera (n = ", nrow(within_hymenoptera), ")"),
+    fill = "Which group"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  )
+
+rm(within_hymenoptera, plot_data)
+```
+
+# Abundance models
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# NB with simple ZI
+m_zinb1 <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  ziformula = ~ 1,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# NB with ZI by LU
+m_zinb2 <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  ziformula = ~ Predominant_land_use,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# NB with ZI by higher taxon
+m_zinb3 <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  ziformula = ~ Higher_taxon,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# NB wih complex ZI
+m_zinb_full <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  ziformula = ~ Predominant_land_use * Higher_taxon,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+summary(m_nb) ; summary(m_zinb1) ; summary(m_zinb_full)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # p < 0.05
+testDispersion(res_nb)
+plot(res_nb)
+
+# Does adding simple ZI fix the zero problem?
+res_zinb1 <- simulateResiduals(m_zinb1, n = 1000)
+testZeroInflation(res_zinb1)
+plot(res_zinb1)
+
+# ZI by LU
+res_zinb2 <- simulateResiduals(m_zinb2, n = 1000)
+testZeroInflation(res_zinb2)
+plot(res_zinb2)
+
+summary(m_zinb2)
+
+#  ZI by higher taxon
+res_zinb3 <- simulateResiduals(m_zinb3, n = 1000)
+testZeroInflation(res_zinb3)
+plot(res_zinb3)
+
+summary(m_zinb3)
+
+# Does adding complex ZI fix the zero problem?
+res_zinbfull <- simulateResiduals(m_zinb_full, n = 1000)
+testZeroInflation(res_zinbfull)
+plot(res_nb) ; plot(res_zinb1) ; plot(res_zinbfull) 
+
+
+AIC(m_nb, m_zinb1, m_zinb_full) # zero inflation really depends on relationship between LU * Order
+BIC(m_nb, m_zinb1, m_zinb_full)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+
+hymenoptera_coleoptera <- droplevels(hymenoptera_coleoptera)
+
+# glmm.hp does not like the * syntax in the model
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use + Higher_taxon + Predominant_land_use:Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Run the hierarchical partitioning
+glmm.hp(mod = m_nb)
+
+rm(m_zinb2, m_zinb3, m_zinb_full, m_zinb1, res_nb, res_zinb1, res_zinbfull, res_zinb2, res_zinb3)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  hymenoptera_coleoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hymenoptera_coleoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# # Create pairwise data
+
+```{r}
+hym_col_ss <-  model_data_sr_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hymenoptera_coleoptera <- model_data_sr_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Hymenoptera", "Coleoptera")) %>% droplevels()
+```
+
+# Inspect the richness data
+
+```{r}
+sr <- hymenoptera_coleoptera$SpeciesRichness
+
+summary(sr) 
+sum(is.na(sr)) # number of NAs
+sum(sr == 0, na.rm = TRUE) # number of zeros 889/2655 = 33%
+
+# What proportion of my sr values are not whole numbers?
+mean(abs(sr - round(sr)) > 1e-8, na.rm = TRUE)        
+# round(sr) - rounds each sr value to the nearest integer, integers stay the same, non-integers get changed
+# sr - round(sr) - subtract the rounded value from the original sr value element by element, if sr was already an integer -> 0, if x was not an integer -> non-zero value
+# abs() takes the absolute value (removes minus sign)
+# > 1e8 is the same as > 0.000000001
+
+mean(sr, na.rm = TRUE) # 2.89
+var(sr, na.rm = TRUE) # 146.6804
+
+# var > mean, overdispersion - poisson will struggle, use negative binomial.
+
+# Fraction of zeros?
+mean(hymenoptera_coleoptera$SpeciesRichness == 0, na.rm = TRUE) # 33%
+```
+
+# Start the modelling
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+
+glmmTMB::diagnose(m_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+#### Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  hymenoptera_coleoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hymenoptera_coleoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+
+```{r}
+col_hym <- ggarrange(hymenoptera_coleoptera_plot_ab, hymenoptera_coleoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/col_hym.png", col_hym, height = 10, width = 10)
+
+rm(col_hym, hymenoptera_coleoptera_plot_ab, hymenoptera_coleoptera_plot_sr, hymenoptera_coleoptera)
+```
+
+
+
+# Hymenoptera versus Diptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+dip_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% dip_hym_ss) %>% filter(Order %in% c("Diptera", "Hymenoptera")) %>% droplevels()
+```
+
+# Inspect Hymenoptera composition
+
+```{r}
+# Check the breakdown of ants, bees and wasps based on family
+# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
+within_hymenoptera <- diptera_hymenoptera %>%
+  filter(Higher_taxon == "Hymenoptera") %>%
+  mutate(
+    Which_group = case_when(
+      Family == "Formicidae" ~ "Ants",
+      Family %in% bee_families ~ "Bees",
+      TRUE ~ "Wasps"
+    )
+  ) %>%
+  droplevels()
+
+plot_data <- within_hymenoptera %>%
+  count(Which_group) %>%
+  mutate(
+    prop = n / sum(n),
+    label = paste0(Which_group, "\n", n, " (", round(prop * 100, 1), "%)")
+  )
+
+ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.5) +
+  labs(
+    title = paste0("Diptera versus Hymenoptera (n = ", nrow(within_hymenoptera), ")"),
+    fill = "Which group"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  )
+
+rm(within_hymenoptera, plot_data)
+```
+
+# Abundance models
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # p < 0.05
+testDispersion(res_nb) # dispersion ok
+plot(res_nb)
+
+# NB with simple ZI
+m_zinb1 <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  ziformula = ~ 1,
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+# Does adding simple ZI fix the zero problem?
+res_zinb1 <- simulateResiduals(m_zinb1, n = 1000)
+testZeroInflation(res_zinb1) # zero inflation much better now
+testDispersion(res_zinb1)
+plot(res_zinb1)
+
+AIC(m_nb, m_zinb1) # m_zinb1 much better
+BIC(m_nb, m_zinb1) # m_zinb1 much better
+
+# Extract significance values
+Anova(m_zinb1, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_zinb1) # R2m and R2c
+
+rm(m_nb, m_sr, m_zinb2, res_nb, res_zinb1, res_zinb2)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  diptera_hymenoptera
+)
+```
+
+# Create the plot
+
+```{r}
+diptera_hymenoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb, m_zinb1)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+dip_hym_ss <-  model_data_sr_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Diptera", "Hymenoptera")) %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hymenoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  diptera_hymenoptera
+)
+```
+
+# Create the plot
+```{r}
+diptera_hymenoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+dip_hym <- ggarrange(diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/dip_hym.png", dip_hym, height = 10, width = 10)
+
+rm(dip_hym, diptera_hymenoptera, diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr)
+```
+
+
+
+# Hemiptera versus Hymenoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+hemi_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% hemi_hym_ss) %>% filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% droplevels()
+
+# There are only 4 observations for each order in pasture
+table(hemiptera_hymenoptera$Higher_taxon, hemiptera_hymenoptera$Predominant_land_use) 
+
+# Lets remove pasture as there are too few rows to permit robust modelling
+hemiptera_hymenoptera <- hemiptera_hymenoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Confirm "Pasture" is gone
+levels(hemiptera_hymenoptera$Predominant_land_use)
+table(hemiptera_hymenoptera$Predominant_land_use)
+```
+
+# Inspect Hymenoptera composition
+
+```{r}
+# Check the breakdown of ants, bees and wasps based on family
+# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
+within_hymenoptera <- hemiptera_hymenoptera %>%
+  filter(Higher_taxon == "Hymenoptera") %>%
+  mutate(
+    Which_group = case_when(
+      Family == "Formicidae" ~ "Ants",
+      Family %in% bee_families ~ "Bees",
+      TRUE ~ "Wasps"
+    )
+  ) %>%
+  droplevels()
+
+group_cols <- c(
+  "Ants"        = "#E41A1C",
+  "Wasps"        = "#377EB8",
+  "Bees"       = "#4DAF4A"
+)
+
+plot_data <- within_hymenoptera %>%
+  count(Which_group) %>%
+  mutate(
+    prop = n / sum(n),
+    label = paste0(Which_group, "\n", n, " (", round(prop * 100, 1), "%)")
+  )
+
+ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.5) +
+  labs(
+    title = paste0("Hemiptera versus Hymenoptera (n = ", nrow(within_hymenoptera), ")"),
+    fill = "Which group"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  ) +
+   scale_fill_manual(values = group_cols, drop = FALSE)
+
+rm(within_hymenoptera, plot_data)
+```
+
+# Abundance models 
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+
+rm(res_nb)
+```
+
+#### Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  hemiptera_hymenoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hemiptera_hymenoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+hemi_hym_ss <-  model_data_sr_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% hemi_hym_ss) %>% filter(Order %in% c("Hemiptera", "Hymenoptera")) %>% droplevels()
+
+# Lets remove pasture as there are too few rows to permit robust modelling
+hemiptera_hymenoptera <- hemiptera_hymenoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+
+# Confirm "Pasture" is gone
+levels(hemiptera_hymenoptera$Predominant_land_use)
+table(hemiptera_hymenoptera$Predominant_land_use)
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_hymenoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  hemiptera_hymenoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hemiptera_hymenoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+hemi_hym <- ggarrange(hemiptera_hymenoptera_plot_ab, hemiptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+# ggsave("../figures/C2_latest_figs/hemi_hym.png", hemi_hym, height = 10, width = 10)
+
+rm(hemi_hym, hemiptera_hymenoptera, hemiptera_hymenoptera_plot_ab, hemiptera_hymenoptera_plot_sr)
+```
+
+
+# Lepidoptera versus Hymenoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+lep_hym_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+lepidoptera_hymenoptera <- model_data_ab_integer_only %>% filter(SS %in% lep_hym_ss) %>% filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% droplevels()
+
+# There are only 1 observations for each order in plantation, 7 in urban might be ok
+table(lepidoptera_hymenoptera$Higher_taxon, lepidoptera_hymenoptera$Predominant_land_use) 
+
+# Lets remove plantation as there are too few rows to permit robust modelling
+lepidoptera_hymenoptera <- lepidoptera_hymenoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Inspect Hymenoptera composition
+
+```{r}
+# Check the breakdown of ants, bees and wasps based on family
+# everything which isn't Formicidae (ants) or the 9 families of bee, is therefore a wasp
+within_hymenoptera <- lepidoptera_hymenoptera %>%
+  filter(Higher_taxon == "Hymenoptera") %>%
+  mutate(
+    Which_group = case_when(
+      Family == "Formicidae" ~ "Ants",
+      Family %in% bee_families ~ "Bees",
+      TRUE ~ "Wasps"
+    )
+  ) %>%
+  droplevels()
+
+plot_data <- within_hymenoptera %>%
+  count(Which_group) %>%
+  mutate(
+    prop = n / sum(n),
+    label = paste0(Which_group, "\n", n, " (", round(prop * 100, 1), "%)")
+  )
+
+ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.5) +
+  labs(
+    title = paste0("Lepidoptera versus Hymenoptera (n = ", nrow(within_hymenoptera), ")"),
+    fill = "Which group"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  )
+
+table(within_hymenoptera$Which_group, within_hymenoptera$Predominant_land_use)
+
+rm(within_hymenoptera, plot_data)
+```
+
+# Abundance models 
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+
+rm(res_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  lepidoptera_hymenoptera
+)
+```
+
+# Create the plot
+
+```{r}
+lepidoptera_hymenoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+lepidoptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% lep_hym_ss) %>% filter(Order %in% c("Lepidoptera", "Hymenoptera")) %>% droplevels()
+
+# Lets remove plantation forest as there are too few rows to permit robust modelling
+lepidoptera_hymenoptera <- lepidoptera_hymenoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = lepidoptera_hymenoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  lepidoptera_hymenoptera
+)
+```
+
+# Create the plot
+
+```{r}
+lepidoptera_hymenoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+#### Arrange plots and save them 
+```{r}
+lep_hym <- ggarrange(lepidoptera_hymenoptera_plot_ab, lepidoptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/lep_hym.png", lep_hym, height = 10, width = 10)
+
+rm(lep_hym, lepidoptera_hymenoptera, lepidoptera_hymenoptera_plot_ab, lepidoptera_hymenoptera_plot_sr)
+```
+
+
+
+
+# Coleoptera versus Diptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+col_dip_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Diptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_diptera <- model_data_ab_integer_only %>% filter(SS %in% col_dip_ss) %>% filter(Order %in% c("Coleoptera", "Diptera")) %>% droplevels()
+
+# sample design looks good
+table(coleoptera_diptera$Higher_taxon, coleoptera_diptera$Predominant_land_use)
+```
+
+# Abundance models
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+#### Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  coleoptera_diptera
+)
+```
+
+# Create the plot
+
+```{r}
+coleoptera_diptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+coleoptera_diptera <- model_data_sr_integer_only %>% filter(SS %in% col_dip_ss) %>% filter(Order %in% c("Coleoptera", "Diptera")) %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_diptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  coleoptera_diptera
+)
+```
+
+# Create the plot
+
+```{r}
+coleoptera_diptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+
+```{r}
+col_dip <- ggarrange(coleoptera_diptera_plot_ab, coleoptera_diptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/col_dip.png", col_dip, height = 10, width = 10)
+
+rm(col_dip, coleoptera_diptera, coleoptera_diptera_plot_ab, coleoptera_diptera_plot_sr)
+```
+
+
+# Coleoptera versus Hemiptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+col_hemi_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_hemiptera <- model_data_ab_integer_only %>% filter(SS %in% col_hemi_ss) %>% filter(Order %in% c("Coleoptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 4)
+table(coleoptera_hemiptera$Higher_taxon, coleoptera_hemiptera$Predominant_land_use) 
+coleoptera_hemiptera <- coleoptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Abundance models
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  coleoptera_hemiptera
+)
+```
+
+# Create the plot
+
+```{r}
+coleoptera_hemiptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+coleoptera_hemiptera <- model_data_sr_integer_only %>% filter(SS %in% col_hemi_ss) %>% filter(Order %in% c("Coleoptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 4)
+coleoptera_hemiptera <- coleoptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_hemiptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+testOutliers(res_sr)
+testUniformity(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  coleoptera_hemiptera
+)
+```
+
+# Create the plot
+```{r}
+coleoptera_hemiptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+col_hemi <- ggarrange(coleoptera_hemiptera_plot_ab, coleoptera_hemiptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/col_hemi.png", col_hemi, height = 10, width = 10)
+
+rm(col_hemi, coleoptera_hemiptera, coleoptera_hemiptera_plot_ab, coleoptera_hemiptera_plot_sr, res_nb)
+```
+
+
+
+
+# Coleoptera versus Lepidoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+col_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+coleoptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 1)
+table(coleoptera_lepidoptera$Higher_taxon, coleoptera_lepidoptera$Predominant_land_use) 
+coleoptera_lepidoptera <- coleoptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Abundance model
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  coleoptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+coleoptera_lepidoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined, m_nb)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+coleoptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% col_lep_ss) %>% filter(Order %in% c("Coleoptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data
+coleoptera_lepidoptera <- coleoptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = coleoptera_lepidoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+testOutliers(res_sr)
+testUniformity(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+performance::r2(m_sr)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  coleoptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+coleoptera_lepidoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+col_lep <- ggarrange(coleoptera_lepidoptera_plot_ab, coleoptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/col_lep.png", col_lep, height = 10, width = 10)
+
+rm(col_lep, coleoptera_lepidoptera, coleoptera_lepidoptera_plot_ab, coleoptera_lepidoptera_plot_sr, res_nb)
+```
+
+
+
+# Diptera versus Hemiptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+dip_hemi_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Hemiptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_hemiptera <- model_data_ab_integer_only %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data (n = 1)
+table(diptera_hemiptera$Higher_taxon, diptera_hemiptera$Predominant_land_use) 
+diptera_hemiptera <- diptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Abundance models
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+# Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  diptera_hemiptera
+)
+```
+
+# Create the plot
+
+```{r}
+diptera_hemiptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+diptera_hemiptera <- model_data_sr_integer_only %>% filter(SS %in% dip_hemi_ss) %>% filter(Order %in% c("Diptera", "Hemiptera")) %>% droplevels()
+
+# Remove pasture as has too few data
+diptera_hemiptera <- diptera_hemiptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_hemiptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+testOutliers(res_sr)
+testUniformity(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  diptera_hemiptera
+)
+```
+
+# Create the plot
+
+```{r}
+diptera_hemiptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr, res_sr)
+```
+
+# Arrrange two plots so they abbut and save them
+
+```{r}
+dip_hemi <- ggarrange(diptera_hemiptera_plot_ab, diptera_hemiptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/dip_hemi.png", dip_hemi, height = 10, width = 10)
+
+rm(dip_hemi, diptera_hemiptera, diptera_hemiptera_plot_ab, diptera_hemiptera_plot_sr, m_nb, res_nb)
+```
+
+
+
+# Diptera versus Lepidoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+dip_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Diptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+diptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data (n = 1)
+table(diptera_lepidoptera$Higher_taxon, diptera_lepidoptera$Predominant_land_use) 
+diptera_lepidoptera <- diptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Abundance models 
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +  (1 | SS), # had to remove Source_ID as model wouldn't converge
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+summary(m_nb)
+
+ # Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  diptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+diptera_lepidoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+diptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% dip_lep_ss) %>% filter(Order %in% c("Diptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data
+diptera_lepidoptera <- diptera_lepidoptera %>% filter(Predominant_land_use != "Plantation forest") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = diptera_lepidoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+testOutliers(res_sr)
+testUniformity(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  diptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+diptera_lepidoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, comparisons, comparisons_df, emm, primary_rows, m_sr, res_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+dip_lep <- ggarrange(diptera_lepidoptera_plot_ab, diptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/dip_lep.png", dip_lep, height = 10, width = 10)
+
+rm(dip_lep, diptera_lepidoptera, diptera_lepidoptera_plot_ab, diptera_lepidoptera_plot_sr, m_nb, res_nb)
+```
+
+
+# Hemiptera versus Lepidoptera
+
+# Create pairwise data
+
+```{r}
+#Extract the studies and create the model data
+hemi_lep_ss <-  model_data_ab_integer_only %>% 
+  dplyr::select(SS, Order) %>% 
+  filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% 
+  unique() %>% 
+  group_by(SS) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(SS) %>% 
+  unique() %>% 
+  droplevels()
+
+# Model data
+hemiptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% droplevels()
+
+# Remove plantation as has too few data (n = 1)
+table(hemiptera_lepidoptera$Higher_taxon, hemiptera_lepidoptera$Predominant_land_use) 
+hemiptera_lepidoptera <- hemiptera_lepidoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Abundance models 
+
+```{r}
+# NB (no ZI)
+m_nb <- glmmTMB(
+  TotalAbundance ~ Predominant_land_use * Higher_taxon +  (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+summary(m_nb)
+
+ # Are zeros a problem in the nb model?
+res_nb <- simulateResiduals(m_nb, n = 1000)
+testZeroInflation(res_nb) # not a problem
+testDispersion(res_nb) # not a problem 
+plot(res_nb)
+
+# Extract significance values
+Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_nb) # R2m and R2c
+performance::r2(m_nb)
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_nb,
+  hemiptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hemiptera_lepidoptera_plot_ab <- combined %>%
+  ggplot() +
+  aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon) +
+  geom_hline(yintercept = 0, linewidth = 0.5, color = "black") +
+  geom_point(size = 6, position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(ymin = lower.CL, ymax = upper.CL),
+                 position = position_dodge(width = 0.5), linewidth = 2) +
+  theme_classic() +
+  scale_x_discrete(limits = land_use_levels) +
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5, 5.5), linetype = 2) +
+  ylab("Log (Total abundance difference)") +
+  scale_colour_manual(values = group_colours, name = "Order") +
+  guides(color = guide_legend(
+    override.aes = list(shape = 16, size = 10, linetype = 0)
+  )) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(face = "bold", size = 16),
+    legend.text  = element_text(size = 16)
+  )
+
+rm(combined)
+```
+
+
+# Species-richness models
+
+# Create pairwise data
+
+```{r}
+# Model data
+hemiptera_lepidoptera <- model_data_sr_integer_only %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% droplevels()
+
+# Remove pasture as has too few data
+hemiptera_lepidoptera <- hemiptera_lepidoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
+```
+
+# Run the richness model
+
+```{r}
+# NB (no ZI)
+m_sr <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  family = nbinom2(),
+  data = hemiptera_lepidoptera
+)
+
+summary(m_sr)
+
+res_sr <- simulateResiduals(m_sr, n = 1000)
+testDispersion(res_sr) # dispersion not a problem
+testZeroInflation(res_sr) #zero inflation not a problem
+plot(res_sr)
+testOutliers(res_sr)
+testUniformity(res_sr)
+
+# Extract significance values
+Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
+
+# This is the GLMM equivalent of the F-tests I used to report for lmer.
+# “There was a significant interaction between land use and taxon (Wald χ²₅ = 77.67, p < 0.001).”
+
+r.squaredGLMM(m_sr) # R2m and R2c
+```
+
+# Simulate and prepare the fitted values for each Order 
+
+```{r}
+combined <- extract_emmeans_contrasts(
+  m_sr,
+  hemiptera_lepidoptera
+)
+```
+
+# Create the plot
+
+```{r}
+hemiptera_lepidoptera_plot_sr <- combined %>%
+    ggplot()+
+    aes(x = Predominant_land_use, y = estimate, colour = Higher_taxon, group = Higher_taxon)+
+    geom_hline(yintercept = 0, linewidth = 0.5, color = ("black"), linetype = 1)+
+    geom_point(size = 6, position = position_dodge(width = 0.5))+
+    geom_linerange(aes(ymin = lower.CL, ymax = upper.CL), position = position_dodge(width = 0.5), linewidth = 2)+
+    theme_classic()+
+    scale_x_discrete(limits=land_use_levels)+
+    geom_vline(xintercept = 1.5, linetype = 2)+
+    geom_vline(xintercept = 2.5, linetype = 2)+
+    geom_vline(xintercept = 3.5, linetype = 2)+
+    geom_vline(xintercept = 4.5, linetype = 2)+
+    geom_vline(xintercept = 5.5, linetype = 2)+
+    theme(axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 16),
+          axis.title.y = element_text(size = 16),  
+          axis.title.x = element_blank(),
+          panel.border = element_rect(colour = "black",  fill=NA))+
+    xlab("Land use intensity class")+
+    ylab("Log (Species richness difference)") +
+    scale_colour_manual(values=group_colours, name = "Order") + # this overrides the colours for the groups as above
+    guides(color = guide_legend(
+      override.aes=list(shape = 16, size = 10, linetype = 0))) +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = )) +
+  theme(legend.title = element_text(face = "bold", size = 16),
+        legend.text = element_text(size = 16)) 
+
+rm(combined, m_sr, res_sr)
+```
+
+# Arrange plots and save them 
+```{r}
+hemi_lep <- ggarrange(hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
+#ggsave("../figures/C2_latest_figs/hemi_lep.png", hemi_lep, height = 10, width = 10)
+rm(hemi_lep, hemiptera_lepidoptera, hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_sr, m_nb, res_nb)
+```
+
+
