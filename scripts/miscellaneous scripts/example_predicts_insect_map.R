@@ -5,13 +5,9 @@ library(ggplot2)
 # here::here also called in place
 
 # read in predicts database
-predicts_database <- readRDS(here::here(file.choose())) %>%
-  filter(Class == "Insecta")
+multi_order_df <- readRDS(here::here(file.choose()))
 
-
-
-
-data_coordinates <- clean %>%
+data_coordinates <- multi_order_df %>%
   dplyr::select(Longitude, Latitude, Order) %>%
   unique()
 
@@ -36,7 +32,7 @@ base_map <- get_basemap() %>%
 site_distribution <- data_coordinates %>%
   ggplot() + 
   geom_polygon(aes(x = long, y = lat, group = group), data = base_map, fill = "lightgrey") +
-  geom_point(aes(x = Longitude, y = Latitude, color = Order), size = 4) +
+  geom_point(aes(x = Longitude, y = Latitude, color = Order), size = 4, alpha = 0.2) +
   coord_map(projection = "mollweide") +
   theme(axis.text = element_blank(), 
         axis.ticks = element_blank(), 
@@ -46,8 +42,11 @@ site_distribution <- data_coordinates %>%
         panel.grid = element_blank(), panel.background = element_rect(fill = "grey98"),
         strip.text.x = element_text(size = 14),
         legend.position = "bottom") +
-  guides(colour = guide_legend(override.aes=list(shape = 19))) +
+  guides(colour = guide_legend(override.aes=list(alpha = 1, shape = 19, size = 4))) +
   scale_color_manual(values= group_colours) +
   theme(legend.key=element_rect(fill=NA), legend.text = element_text(size= 14)) 
 
 ggarrange(site_distribution, common.legend = TRUE, legend = "bottom") 
+
+
+#ggsave("./figures/C2_latest_figs/multi-group-site_distribution.png", site_distribution, width = 10, height = 6)
