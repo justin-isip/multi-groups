@@ -26,6 +26,7 @@ library(ggpubr)
 library(here)
 library(performance)
 library(glmm.hp)
+library(devtools)
 ```
 
 # Load data
@@ -2350,4 +2351,8 @@ hemi_lep <- ggarrange(hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_
 rm(hemi_lep, hemiptera_lepidoptera, hemiptera_lepidoptera_plot_ab, hemiptera_lepidoptera_plot_sr, m_nb, res_nb)
 ```
 
+
+```{r}
+devtools::session_info()
+```
 
