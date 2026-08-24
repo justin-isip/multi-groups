@@ -47,15 +47,14 @@ model_data_sr <- model_data_sr %>%
 
 # Land use levels
 land_use_levels <- c("Primary", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban") 
-
-# Add specific colours for each order
 group_colours <- c(Diptera = "#FFC300", Lepidoptera = "#ff5733", Hymenoptera = "#c70039", Hemiptera = "#197BBD", Coleoptera = "#581845") 
+
 
 bee_families <- c(
   "Andrenidae", "Apidae", "Colletidae", "Dasypodaidae",
   "Halictidae", "Megachilidae", "Meganomiidae",
   "Melittidae", "Stenotritidae"
-)
+) 
 ```
 
 # Handling non-integer count data 
@@ -95,7 +94,9 @@ all(abs(model_data_sr_integer_only$SpeciesRichness -
 
 # Check which values are non-integers
 still_non_integer_abundance <- model_data_ab_integer_only %>%
-  dplyr::filter(abs(TotalAbundance - round(TotalAbundance)) > 1e-8) %>% dplyr::select(SS, SSBS, SSBST, Best_guess_binomial, Diversity_metric, Diversity_metric_unit, Diversity_metric_type,Effort_corrected_measurement, Corrected_sampling_effort,  merged_diversity, TotalAbundance, SpeciesRichness, to_add, logAbundance) %>%  droplevels()
+  dplyr::filter(abs(TotalAbundance - round(TotalAbundance)) > 1e-8) %>% 
+  dplyr::select(SS, SSBS, SSBST, Best_guess_binomial, Diversity_metric, Diversity_metric_unit, Diversity_metric_type,Effort_corrected_measurement, Corrected_sampling_effort,  merged_diversity, TotalAbundance, SpeciesRichness, to_add, logAbundance) %>%  
+  droplevels()
 
 # Which studies?
 unique(still_non_integer_abundance$SS)
@@ -130,7 +131,7 @@ all(abs(model_data_ab_integer_only$TotalAbundance -
 rm(model_data_ab, model_data_sr, still_non_integer_abundance, rounded_abundances)
 ```
 
-# Helper function
+# Helper functions
 
 ```{r}
 extract_emmeans_contrasts <- function(model, data) {
@@ -242,7 +243,7 @@ ggplot(plot_data, aes(x = "", y = n, fill = Which_group)) +
 rm(within_hymenoptera, plot_data)
 ```
 
-# Abundance models
+# Abundance model
 
 ```{r}
 # NB (no ZI)
@@ -252,73 +253,29 @@ m_nb <- glmmTMB(
   data = hymenoptera_coleoptera
 )
 
-# NB with simple ZI
-m_zinb1 <- glmmTMB(
+m_nbzi <- glmmTMB(
   TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-  ziformula = ~ 1,
   family = nbinom2(),
+    ziformula = ~ Predominant_land_use * Higher_taxon,
   data = hymenoptera_coleoptera
 )
 
-# NB with ZI by LU
-m_zinb2 <- glmmTMB(
-  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-  ziformula = ~ Predominant_land_use,
-  family = nbinom2(),
-  data = hymenoptera_coleoptera
-)
-
-# NB with ZI by higher taxon
-m_zinb3 <- glmmTMB(
-  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-  ziformula = ~ Higher_taxon,
-  family = nbinom2(),
-  data = hymenoptera_coleoptera
-)
-
-# NB wih complex ZI
-m_zinb_full <- glmmTMB(
-  TotalAbundance ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
-  ziformula = ~ Predominant_land_use * Higher_taxon,
-  family = nbinom2(),
-  data = hymenoptera_coleoptera
-)
-
-summary(m_nb) ; summary(m_zinb1) ; summary(m_zinb_full)
+AIC(m_nb, m_nbzi) # m_nbzi significantly better
 
 # Are zeros a problem in the nb model?
 res_nb <- simulateResiduals(m_nb, n = 1000)
-testZeroInflation(res_nb) # p < 0.05
-testDispersion(res_nb)
 plot(res_nb)
+testZeroInflation(res_nb) # zeros a problem
 
-# Does adding simple ZI fix the zero problem?
-res_zinb1 <- simulateResiduals(m_zinb1, n = 1000)
-testZeroInflation(res_zinb1)
-plot(res_zinb1)
+# Are zeros a problem in the nbzi model?
+res_nbzi <- simulateResiduals(m_nbzi, n = 1000)
+plot(res_nbzi)
+testZeroInflation(res_nbzi) # zeros no longer a significant problem
+testDispersion(res_nbzi) # dispersion not a problem
+testOutliers(res_nbzi, type = "bootstrap") # outliers not a problem
+testUniformity(res_nbzi)
 
-# ZI by LU
-res_zinb2 <- simulateResiduals(m_zinb2, n = 1000)
-testZeroInflation(res_zinb2)
-plot(res_zinb2)
-
-summary(m_zinb2)
-
-#  ZI by higher taxon
-res_zinb3 <- simulateResiduals(m_zinb3, n = 1000)
-testZeroInflation(res_zinb3)
-plot(res_zinb3)
-
-summary(m_zinb3)
-
-# Does adding complex ZI fix the zero problem?
-res_zinbfull <- simulateResiduals(m_zinb_full, n = 1000)
-testZeroInflation(res_zinbfull)
-plot(res_nb) ; plot(res_zinb1) ; plot(res_zinbfull) 
-
-
-AIC(m_nb, m_zinb1, m_zinb_full) # zero inflation really depends on relationship between LU * Order
-BIC(m_nb, m_zinb1, m_zinb_full)
+check_model(m_nb)
 
 # Extract significance values
 Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test table
@@ -326,19 +283,7 @@ Anova(m_nb, type = "II") # This produces a Type II Wald χ² (chi-square) test t
 r.squaredGLMM(m_nb) # R2m and R2c
 performance::r2(m_nb)
 
-hymenoptera_coleoptera <- droplevels(hymenoptera_coleoptera)
-
-# glmm.hp does not like the * syntax in the model
-m_nb <- glmmTMB(
-  TotalAbundance ~ Predominant_land_use + Higher_taxon + Predominant_land_use:Higher_taxon + (1 | Source_ID) + (1 | SS),
-  family = nbinom2(),
-  data = hymenoptera_coleoptera
-)
-
-# Run the hierarchical partitioning
-glmm.hp(mod = m_nb)
-
-rm(m_zinb2, m_zinb3, m_zinb_full, m_zinb1, res_nb, res_zinb1, res_zinbfull, res_zinb2, res_zinb3)
+rm(res_nb)
 ```
 
 # Simulate and prepare the fitted values for each Order 
@@ -433,21 +378,193 @@ mean(hymenoptera_coleoptera$SpeciesRichness == 0, na.rm = TRUE) # 33%
 ```{r}
 # NB (no ZI)
 m_sr <- glmmTMB(
-  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS),
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon + (1 | Source_ID) + (1 | SS) + (1 | SSB),
   family = nbinom2(),
   data = hymenoptera_coleoptera
 )
 
 summary(m_sr)
 
+# Are zeros a problem in the sr model?
 res_sr <- simulateResiduals(m_sr, n = 1000)
-testDispersion(res_sr) # dispersion not a problem
-testZeroInflation(res_sr) #zero inflation not a problem
-plot(res_sr)
+plot(res_sr) # KS/uniformity: ❌ significant — something about the residual distribution doesn't match the model
+testZeroInflation(res_sr) # no ZI
+testDispersion(res_sr) # no dispersion
+testOutliers(res_sr, type = "bootstrap") # no outliers after bootstrapping
+check_collinearity(m_sr) # no multicollinearity 
 
-glmmTMB::diagnose(m_sr)
+# Boxplots of the residual distributions for each predictor  and test whether the groups behave as expected
+# Plot simulated residuals for LU
+plotResiduals(res_sr, form = hymenoptera_coleoptera$Predominant_land_use)
+# Plot simulated residuals for Order
+plotResiduals(res_sr, form = hymenoptera_coleoptera$Higher_taxon)
+
+# Model assumes after accounting for LU, Order, LU * Order, Source_ID and SS there shouldn't be systematic residual differences among variables
+# Coleoptera consistently has residuals deviating from 0.5 (uniform distribution)  with lots of outliers outside the boxplot
+```
+
+# Lets have a look at the residuals of each LU * Order combination too
+
+```{r}
+hymenoptera_coleoptera$landuse_taxon <-
+  interaction(
+    hymenoptera_coleoptera$Predominant_land_use,
+    hymenoptera_coleoptera$Higher_taxon
+  )
+
+# Does the model fit some particular combination of land use and insect order substantially differently from others?
+plotResiduals(
+  res_sr,
+  form = hymenoptera_coleoptera$landuse_taxon
+)
+
+# Lots of heterogeneity in the simulated residuals for each LU * Order combo, primary * coleoptera for example has a significant number of outliers.
+```
+
+# Test continuous relationship with predicted values
+
+```{r}
+# Evidence that residuals misbehave against fitted values
+
+plotResiduals(
+  res_sr,
+  form = predict(m_sr, type = "response"),
+  quantreg = TRUE
+)
+
+# Test whether the residual quatiles vary with species richness
+testQuantiles(
+  res_sr,
+  predictor = predict(m_sr, type = "response")
+)
+```
+
+# Check sample sizes 
+```{r}
+# If some land-use × taxon combinations have very few observations, that can produce unstable residual distributions and potentially contribute to these diagnostics.
+
+table(hymenoptera_coleoptera$Predominant_land_use)
+table(hymenoptera_coleoptera$Higher_taxon)
+
+table(
+  hymenoptera_coleoptera$Predominant_land_use,
+  hymenoptera_coleoptera$Higher_taxon
+)
+```
+
+# examine observed versus predicted species richness for each of the 12 LU * Order combinations.
+
+```{r}
+hymenoptera_coleoptera$predicted <- predict(
+  m_sr,
+  type = "response"
+)
+
+# This will tell you whether the residual pattern corresponds to systematic differences between observed and predicted values.
+aggregate(
+  cbind(SpeciesRichness, predicted) ~
+    Predominant_land_use + Higher_taxon,
+  data = hymenoptera_coleoptera,
+  FUN = mean
+)
+```
+
+
+# Spread of residuals differs among land-use x order combinations
+# Model might be estimating variance structure poorly for these groups
+# glmmTMB allows you to model dispersion separately from the mean using dispformula.
+
+```{r}
+# First lets have a look at species richness for each combination
+aggregate(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon,
+  data = hymenoptera_coleoptera,
+  FUN = function(x) c(
+    mean = mean(x),
+    variance = var(x),
+    median = median(x),
+    n = length(x)
+  )
+) %>% 
+  View()
+
+# very different variability between groups
+# although negative binomial expects the variance to increase as the mean increases, might not be adequate - probably need to include dispersion parameter
+
+# allow dispersion to vary by land use
+m_sr_disp <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  dispformula = ~ Predominant_land_use,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+AIC(m_sr, m_sr_disp) # AIC significantly improves
+
+res_sr_disp <- simulateResiduals(m_sr_disp, n = 2000)
+
+plot(res_sr_disp)
+testUniformity(res_sr_disp) # residuals still misbehaving
+testDispersion(res_sr_disp) # dispersion not a problem
+testZeroInflation(res_sr_disp) # zero inflation not a problem
+testOutliers(res_sr_disp, type = "bootstrap") # outliers not a problem
+```
+
+# Allow dispersion to vary by order 
+
+```{r}
+# test by order as well
+m_sr_disp2 <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  dispformula = ~ Higher_taxon,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+AIC(m_sr, m_sr_disp, m_sr_disp2) # order substantially better than LU and null model
+
+res_sr_disp2 <- simulateResiduals(m_sr_disp2, n = 2000)
+
+plot(res_sr_disp2)
+testUniformity(res_sr_disp2) # residuals still misbehaving
+testDispersion(res_sr_disp2) # dispersion not a problem
+testZeroInflation(res_sr_disp2) # zero inflation not a problem
+testOutliers(res_sr_disp, type = "bootstrap") # outliers not a problem
+```
+
+
+# Allowing dispersion to differ across all land-use x order combinations does not converge
+
+```{r}
+m_sr_disp3 <- glmmTMB(
+  SpeciesRichness ~ Predominant_land_use * Higher_taxon +
+    (1 | Source_ID) + (1 | SS),
+  dispformula = ~ Predominant_land_use * Higher_taxon,
+  family = nbinom2(),
+  data = hymenoptera_coleoptera
+)
+
+# Have a look at the actual maximum values within each group
+aggregate(
+  SpeciesRichness ~ Predominant_land_use + Higher_taxon,
+  data = hymenoptera_coleoptera,
+  FUN = max
+) %>% 
+  View()
+
+# species richness predictions in the 0.8-1.0 range are currently poorly predicted
+testQuantiles(
+  res_sr_disp2,
+  predictor = predict(m_sr_disp2, type = "response")
+)
+```
 
 # Extract significance values
+
+```{r}
+
 Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test table
 
 # This is the GLMM equivalent of the F-tests I used to report for lmer.
@@ -455,6 +572,8 @@ Anova(m_sr, type = "II") # This produces a Type II Wald χ² (chi-square) test t
 
 r.squaredGLMM(m_sr) # R2m and R2c
 performance::r2(m_sr)
+
+rm(m_sr, m_sr_disp, m_sr_disp2, m_sr_disp3, m_sr_disp4, m_sr_nb1, res_sr, res_sr_disp, res_sr_disp2)
 ```
 
 #### Simulate and prepare the fitted values for each Order 
@@ -496,7 +615,7 @@ hymenoptera_coleoptera_plot_sr <- combined %>%
   theme(legend.title = element_text(face = "bold", size = 16),
         legend.text = element_text(size = 16)) 
 
-rm(combined, m_sr)
+rm(combined, m_sr, res_sr)
 ```
 
 # Arrange plots and save them 
@@ -601,6 +720,10 @@ res_zinb1 <- simulateResiduals(m_zinb1, n = 1000)
 testZeroInflation(res_zinb1) # zero inflation much better now
 testDispersion(res_zinb1)
 plot(res_zinb1)
+testZeroInflation(res_zinb1) 
+check_collinearity(m_zinb1)
+
+
 
 AIC(m_nb, m_zinb1) # m_zinb1 much better
 BIC(m_nb, m_zinb1) # m_zinb1 much better
@@ -613,14 +736,14 @@ Anova(m_zinb1, type = "II") # This produces a Type II Wald χ² (chi-square) tes
 
 r.squaredGLMM(m_zinb1) # R2m and R2c
 
-rm(m_nb, m_sr, m_zinb2, res_nb, res_zinb1, res_zinb2)
+rm(m_nb, res_nb, res_zinb1, res_zinb2)
 ```
 
 # Simulate and prepare the fitted values for each Order 
 
 ```{r}
 combined <- extract_emmeans_contrasts(
-  m_nb,
+  m_zinb1,
   diptera_hymenoptera
 )
 ```
@@ -654,7 +777,7 @@ diptera_hymenoptera_plot_ab <- combined %>%
     legend.text  = element_text(size = 16)
   )
 
-rm(combined, m_nb, m_zinb1)
+rm(combined, m_zinb1)
 ```
 
 
@@ -675,7 +798,7 @@ dip_hym_ss <-  model_data_sr_integer_only %>%
   droplevels()
 
 # Model data
-diptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% hym_col_ss) %>% filter(Order %in% c("Diptera", "Hymenoptera")) %>% droplevels()
+diptera_hymenoptera <- model_data_sr_integer_only %>% filter(SS %in% dip_hym_ss) %>% filter(Order %in% c("Diptera", "Hymenoptera")) %>% droplevels()
 ```
 
 # Run the richness model
@@ -749,7 +872,7 @@ rm(combined, m_sr)
 # Arrange plots and save them 
 ```{r}
 dip_hym <- ggarrange(diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr, nrow = 2, common.legend =  TRUE, legend = "bottom") 
-#ggsave("../figures/C2_latest_figs/dip_hym.png", dip_hym, height = 10, width = 10)
+# ggsave("../figures/C2_latest_figs/dip_hym.png", dip_hym, height = 10, width = 10)
 
 rm(dip_hym, diptera_hymenoptera, diptera_hymenoptera_plot_ab, diptera_hymenoptera_plot_sr)
 ```
@@ -2155,7 +2278,7 @@ diptera_lepidoptera_plot_sr <- combined %>%
   theme(legend.title = element_text(face = "bold", size = 16),
         legend.text = element_text(size = 16)) 
 
-rm(combined, comparisons, comparisons_df, emm, primary_rows, m_sr, res_sr)
+rm(combined, m_sr, res_sr)
 ```
 
 # Arrange plots and save them 
@@ -2187,7 +2310,7 @@ hemi_lep_ss <-  model_data_ab_integer_only %>%
 # Model data
 hemiptera_lepidoptera <- model_data_ab_integer_only %>% filter(SS %in% hemi_lep_ss) %>% filter(Order %in% c("Hemiptera", "Lepidoptera")) %>% droplevels()
 
-# Remove plantation as has too few data (n = 1)
+# Remove pasture as has too few data (n = 4) and gives huge SE in the plot
 table(hemiptera_lepidoptera$Higher_taxon, hemiptera_lepidoptera$Predominant_land_use) 
 hemiptera_lepidoptera <- hemiptera_lepidoptera %>% filter(Predominant_land_use != "Pasture") %>% droplevels()
 ```
