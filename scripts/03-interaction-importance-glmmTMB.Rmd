@@ -1,8 +1,16 @@
 ---
-title: "Untitled"
-output: html_document
-date: "2026-02-09"
+title: " Matched comparisons highlight divergent impacts of land-use change on the dominant orders of insects"
+author: "Justin Ephraim Isip"
+date: "2026-01-13"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
 ---
+
+# Overview
+This document calculates the interaction importance for both the abundance and species richness models for each of the 10 pairwise comparisons.
 
 # Clear the work space
 
